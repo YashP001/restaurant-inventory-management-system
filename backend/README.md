@@ -768,4 +768,76 @@ Sellable culinary dishes linked to menu categories with recipe bill-of-materials
 - `MENU_ITEM_NOT_FOUND` (404): Menu item with specified ID does not exist.
 - `FORBIDDEN_ROLE` (403): Staff role lacks menu item creation or update privileges.
 
+---
+
+## 12. Recipe & Bill of Materials (BOM) Management APIs (Phase 2 — Task 4B.2)
+
+Connects sellable menu items to their raw master ingredients through relational recipes and BOM line items. Implements automated theoretical costing, dimension validation, 1:1 recipe uniqueness, and historical order consumption guards.
+
+### 1. API Endpoints
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/recipes` | Authenticated Staff | List recipes with pagination, search, BOM item counts, and estimated cost |
+| `GET` | `/api/v1/recipes/:id` | Authenticated Staff | Get recipe header, complete BOM ingredients, and theoretical costing breakdown |
+| `GET` | `/api/v1/recipes/:id/cost` | Authenticated Staff | Retrieve dedicated theoretical recipe costing breakdown and profitability metrics |
+| `GET` | `/api/v1/menu-items/:id/recipe` | Authenticated Staff | Get recipe and BOM mapping directly for a specific menu item |
+| `POST` | `/api/v1/menu-items/:id/recipe` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Create a recipe and optional initial BOM for a menu item (ACID transaction) |
+| `PATCH` | `/api/v1/recipes/:id` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Update recipe yield servings and preparation instructions |
+| `POST` | `/api/v1/recipes/:id/ingredients` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Add raw ingredient to recipe BOM (dimension compatibility enforced) |
+| `PATCH` | `/api/v1/recipes/:id/ingredients/:ingredientId` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Update quantity, unit, or wastage allowance for an ingredient |
+| `DELETE` | `/api/v1/recipes/:id/ingredients/:ingredientId` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Remove ingredient from BOM (protected against historical consumptions) |
+
+---
+
+### 2. Theoretical Recipe Costing Methodology
+
+The costing endpoint computes theoretical reference cost based on master catalog reference costs (`ingredients.cost_per_unit`), hierarchical unit conversion ratios (`units_of_measure`), and prep scrap/wastage allowances (`recipe_ingredients.wastage_allowance_percent`):
+
+$$\text{Required Quantity with Wastage} = \text{quantity\_required} \times \left(1.0 + \frac{\text{wastage\_allowance\_percent}}{100.0}\right)$$
+
+$$\text{Effective Quantity in Base Unit} = \text{Required Quantity} \times \frac{\text{UOM}_{\text{conversion\_factor}}}{\text{Base\_UOM}_{\text{conversion\_factor}}}$$
+
+$$\text{Line Cost} = \text{Effective Quantity in Base Unit} \times \text{cost\_per\_unit}$$
+
+$$\text{Total Recipe Cost} = \sum \text{Line Cost}$$
+
+$$\text{Cost Per Serving} = \frac{\text{Total Recipe Cost}}{\text{yield\_servings}}$$
+
+$$\text{Gross Profit Per Serving} = \text{selling\_price} - \text{Cost Per Serving}$$
+
+$$\text{Food Cost Percentage} = \left(\frac{\text{Cost Per Serving}}{\text{selling\_price}}\right) \times 100$$
+
+> **Theoretical vs. Actual COGS Distinction:**
+> The returned cost represents the **theoretical reference cost** computed from static supplier catalog prices. Actual batch-level COGS fluctuates based on real-time FEFO inventory lots consumed during order execution (`order_ingredient_consumptions`).
+
+---
+
+### 3. Dimensional Compatibility Validation
+
+Units are classified into distinct physical dimensions:
+- `WEIGHT`: Kilogram (kg), Gram (g)
+- `VOLUME`: Liter (l), Milliliter (ml)
+- `COUNT`: Piece (pcs), Dozen (dz)
+
+Cross-dimension mappings (e.g., attempting to measure flour in liters or eggs in kilograms) are rejected with HTTP 400 `UNIT_DIMENSION_MISMATCH`.
+
+---
+
+### 4. Historical Consumption Protection
+
+Before an ingredient can be deleted from a recipe's Bill of Materials, the system queries historical batch consumption records in `order_ingredient_consumptions`. If past dining orders have deducted inventory based on this BOM line, deletion is blocked with HTTP 400 `HISTORICAL_CONSUMPTION_EXISTS` to preserve historical order fidelity.
+
+---
+
+### 5. Audit Logging
+
+Every recipe mutation is recorded in MongoDB Atlas with authenticated user context:
+- `RECIPE_CREATED`
+- `RECIPE_UPDATED`
+- `RECIPE_INGREDIENT_ADDED`
+- `RECIPE_INGREDIENT_UPDATED`
+- `RECIPE_INGREDIENT_REMOVED`
+
+
 

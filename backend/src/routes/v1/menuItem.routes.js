@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { MenuItemController } from '../../controllers/menuItem.controller.js';
+import { RecipeController } from '../../controllers/recipe.controller.js';
 import { authenticateJWT } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
@@ -9,6 +10,9 @@ import {
   createMenuItemSchema,
   updateMenuItemSchema
 } from '../../validations/menuItem.validation.js';
+import {
+  createRecipeSchema
+} from '../../validations/recipe.validation.js';
 
 const router = Router();
 
@@ -21,6 +25,25 @@ router.use(authenticateJWT);
  * @access  Private (Authenticated Staff)
  */
 router.get('/', validate(listMenuItemsQuerySchema), MenuItemController.getMenuItems);
+
+/**
+ * @route   GET /api/v1/menu-items/:id/recipe
+ * @desc    Get recipe and Bill of Materials for a specific menu item
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/:id/recipe', validate(menuItemIdParamSchema), RecipeController.getRecipeByMenuItemId);
+
+/**
+ * @route   POST /api/v1/menu-items/:id/recipe
+ * @desc    Create a recipe and optional initial BOM for a menu item
+ * @access  Private (ADMIN, INVENTORY_MANAGER, CHEF)
+ */
+router.post(
+  '/:id/recipe',
+  requireRole('ADMIN', 'INVENTORY_MANAGER', 'CHEF'),
+  validate(createRecipeSchema),
+  RecipeController.createRecipe
+);
 
 /**
  * @route   GET /api/v1/menu-items/:id
@@ -54,3 +77,4 @@ router.patch(
 );
 
 export default router;
+
