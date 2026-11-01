@@ -839,5 +839,60 @@ Every recipe mutation is recorded in MongoDB Atlas with authenticated user conte
 - `RECIPE_INGREDIENT_UPDATED`
 - `RECIPE_INGREDIENT_REMOVED`
 
+---
+
+## 13. Inventory Read APIs & Stock Visibility (Phase 2 — Task 5A)
+
+Provides real-time visibility into stock balances, physical batch lots, FEFO expiration horizons, reorder deficits, and immutable stock movement ledgers across all master ingredients.
+
+### 1. API Endpoints
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/inventory` | Authenticated Staff | Paginated ingredient inventory with real-time stock, thresholds, and status |
+| `GET` | `/api/v1/inventory/summary` | Authenticated Staff | High-level inventory KPIs, total valuation, and batch health metrics |
+| `GET` | `/api/v1/inventory/:ingredientId` | Authenticated Staff | Complete stock breakdown for an ingredient with batch list and suppliers |
+| `GET` | `/api/v1/inventory/batches` | Authenticated Staff | Physical lots listing with FEFO-first sorting and filtering |
+| `GET` | `/api/v1/inventory/batches/:id` | Authenticated Staff | Detailed batch lot information with audit stock movement history |
+| `GET` | `/api/v1/inventory/expiring` | Authenticated Staff | Expiring and expired batches report with configurable horizon and urgency |
+| `GET` | `/api/v1/inventory/low-stock` | Authenticated Staff | Low-stock and out-of-stock ingredients with reorder deficits |
+| `GET` | `/api/v1/inventory/movements` | Authenticated Staff | Immutable stock movement audit ledger with type and date filtering |
+
+---
+
+### 2. Stock Status Classification Methodology
+
+Stock health is evaluated strictly against active, non-expired inventory batches (`status = 'ACTIVE' AND expiry_date >= CURRENT_DATE()`):
+
+$$\text{Current Stock} = \sum_{\text{active, non-expired}} \text{quantity\_remaining}$$
+
+$$\text{Stock Status} = \begin{cases} 
+\text{OUT\_OF\_STOCK} & \text{if } \text{Current Stock} = 0.000 \\
+\text{LOW\_STOCK} & \text{if } 0.000 < \text{Current Stock} \le \text{minimum\_stock\_level} \\
+\text{NORMAL} & \text{if } \text{Current Stock} > \text{minimum\_stock\_level}
+\end{cases}$$
+
+$$\text{Deficit to Safety Stock} = \max(0.000, \text{minimum\_stock\_level} - \text{Current Stock})$$
+
+$$\text{Suggested Reorder Quantity} = \max(0.000, \text{optimal\_par\_level} - \text{Current Stock})$$
+
+---
+
+### 3. Expiration Urgency Classification
+
+The system strictly differentiates already-expired lots from active batches approaching expiration:
+
+$$\text{Days Until Expiry} = \text{DATEDIFF}(\text{expiry\_date}, \text{CURRENT\_DATE})$$
+
+$$\text{Urgency Status} = \begin{cases} 
+\text{EXPIRED} & \text{if } \text{expiry\_date} < \text{CURRENT\_DATE} \lor \text{status} = \text{'EXPIRED'} \\
+\text{CRITICAL} & \text{if } \text{Days Until Expiry} \le 3 \\
+\text{WARNING} & \text{if } \text{Days Until Expiry} \le 7 \\
+\text{ATTENTION} & \text{if } \text{Days Until Expiry} > 7
+\end{cases}$$
+
+> **No Double-Counting:** Aggregations group strictly by ingredient primary key and left-join batch lots, preventing cross-multiplication across child records.
+
+
 
 

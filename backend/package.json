@@ -7,12 +7,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node tests/core_infrastructure.test.js && node tests/auth_staff.test.js && node tests/master_catalog.test.js && node tests/menu_item.test.js && node tests/recipe.test.js",
+    "test": "node tests/core_infrastructure.test.js && node tests/auth_staff.test.js && node tests/master_catalog.test.js && node tests/menu_item.test.js && node tests/recipe.test.js && node tests/inventory.test.js",
     "test:infra": "node tests/core_infrastructure.test.js",
     "test:auth": "node tests/auth_staff.test.js",
     "test:catalog": "node tests/master_catalog.test.js",
     "test:menu": "node tests/menu_item.test.js",
-    "test:recipe": "node tests/recipe.test.js"
+    "test:recipe": "node tests/recipe.test.js",
+    "test:inventory": "node tests/inventory.test.js"
   },
   "keywords": [
     "inventory",
