@@ -145,16 +145,75 @@ The relational schema is implemented in [01_schema_v1.sql](file:///e:/Inventory%
 
 ---
 
-## 4. Execution & Verification Commands
+## 4. Database Views & Reporting (Phase 1, Task 3A)
 
-To execute or re-apply the schema v1.0 script in Windows PowerShell:
+The reporting layer is defined in [02_views.sql](file:///e:/Inventory%20Management%20System%20Project/database/mysql/02_views.sql):
+
+1. **`vw_current_stock`**: Real-time aggregated inventory on hand across active, non-expired batches per ingredient, with safety threshold comparison and reorder status (`LOW STOCK` vs `SUFFICIENT`).
+2. **`vw_expiring_batches_fefo`**: Active inventory lots sorted by earliest expiry date first, with dynamic urgency classification (`CRITICAL`, `WARNING`, `GOOD`, `EXPIRED`).
+3. **`vw_recipe_costs`**: Theoretical dish production costs, gross margin per serving, and food cost percentage based on standard ingredient costs and unit conversion factors.
+4. **`vw_waste_analytics`**: Aggregated food waste quantity and financial loss grouped by calendar month and waste reason.
+5. **`vw_daily_sales`**: Point-of-Sale daily metrics (total completed orders, subtotal, tax, discounts, net revenue, and average order value) without duplicate aggregation.
+
+---
+
+## 5. Transaction-Safe FEFO Stored Procedures (Phase 1, Task 3B)
+
+Implemented in [03_fefo_procedures.sql](file:///e:/Inventory%20Management%20System%20Project/database/mysql/03_fefo_procedures.sql):
+
+### `sp_process_order_fefo(IN p_order_id INT)`
+Executes automated stock deduction adhering to the **First Expiry, First Out (FEFO)** principle:
+- **ACID Transaction:** Wrapped in `START TRANSACTION ... COMMIT` with `DECLARE EXIT HANDLER FOR SQLEXCEPTION` guaranteeing full rollback on any failure.
+- **Concurrency & Idempotency:** Acquires a row lock on the target order using `SELECT ... FOR UPDATE`. Aborts immediately if the order is already in `PREPARING` or `COMPLETED` status, eliminating double-deduction risks.
+- **Recipe Bill of Materials Calculation:** Expands each order item into its required ingredients, accounts for preparation wastage allowances, and applies unit conversion ratios (e.g., converting grams in recipes to kilograms in inventory).
+- **Pre-Flight Inventory Check:** Verifies total active, non-expired stock across all ingredients before modifying any batch. If any ingredient is short, the transaction aborts with an informative error message.
+- **FEFO Allocation & Row Locking:** Locks eligible batches with `FOR UPDATE` in `ORDER BY expiry_date ASC, id ASC` sequence. Deducts quantity across batches, writes audit rows to `order_ingredient_consumptions` and `stock_movements`, and advances the order status to `PREPARING`.
+
+---
+
+## 6. Database Triggers (Phase 1, Task 3B)
+
+Implemented in [04_triggers.sql](file:///e:/Inventory%20Management%20System%20Project/database/mysql/04_triggers.sql):
+
+1. **`trg_batch_status_maintenance`** (`BEFORE UPDATE ON inventory_batches`):
+   - Automatically transitions batch status to `DEPLETED` when `quantity_remaining` reaches `0.000`.
+   - Restores status to `ACTIVE` if stock is adjusted upwards.
+2. **`trg_calculate_waste_cost`** (`BEFORE INSERT ON waste_records`):
+   - Automatically calculates financial dollar loss (`financial_loss = quantity_wasted * unit_cost`) using the batch purchase unit cost or the ingredient standard cost.
+   - Automatically handles unit conversion factors if waste is recorded in a smaller unit than the base inventory unit.
+
+---
+
+## 7. Automated Test Suite (Phase 1, Task 3B)
+
+Implemented in [database/tests/fefo_test_cases.sql](file:///e:/Inventory%20Management%20System%20Project/database/tests/fefo_test_cases.sql):
+
+Tests 7 critical inventory scenarios using isolated test fixtures:
+1. **Basic FEFO:** Earliest-expiring batch is deducted first.
+2. **Multi-Batch Deduction:** Large orders draw across multiple batches in expiry order.
+3. **Insufficient Stock Rollback:** Atomic rollback occurs if any ingredient is short.
+4. **Duplicate Order Idempotency:** Second execution on the same order is blocked.
+5. **Expired Batches Protection:** Expired stock is never allocated.
+6. **Zero Quantity Transition:** Batch status transitions to `DEPLETED`.
+7. **Waste Cost Auto-Calculation:** Validates financial loss computation with unit conversions.
+
+---
+
+## 8. Execution & Verification Commands
 
 ```powershell
-& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "e:\Inventory Management System Project\database\mysql\01_schema_v1.sql"
-```
+# 1. Apply Schema v1
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "database\mysql\01_schema_v1.sql"
 
-To verify all 21 tables:
+# 2. Apply Reporting Views
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "database\mysql\02_views.sql"
 
-```powershell
-& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p -e "USE restaurant_inventory_db; SHOW TABLES;"
+# 3. Apply FEFO Stored Procedures
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "database\mysql\03_fefo_procedures.sql"
+
+# 4. Apply Triggers
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "database\mysql\04_triggers.sql"
+
+# 5. Run Automated Test Suite
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p restaurant_inventory_db < "database\tests\fefo_test_cases.sql"
 ```
