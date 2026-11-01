@@ -2,6 +2,9 @@ import { Router } from 'express';
 import healthRoutes from './health.routes.js';
 import authRoutes from './v1/auth.routes.js';
 import userRoutes from './v1/user.routes.js';
+import categoryRoutes from './v1/category.routes.js';
+import unitRoutes from './v1/unit.routes.js';
+import ingredientRoutes from './v1/ingredient.routes.js';
 
 const apiRouter = Router();
 
@@ -11,5 +14,8 @@ apiRouter.use('/health', healthRoutes);
 // Version 1 Modular API Routes
 apiRouter.use('/v1/auth', authRoutes);
 apiRouter.use('/v1/users', userRoutes);
+apiRouter.use('/v1/categories', categoryRoutes);
+apiRouter.use('/v1/units', unitRoutes);
+apiRouter.use('/v1/ingredients', ingredientRoutes);
 
 export default apiRouter;

@@ -462,15 +462,21 @@ Test Results Output:
   🧹 Cleaned up verification test document from MongoDB Atlas
 
 ===============================================================
-  Summary: 39 Passed, 0 Failed (Infrastructure Suite)
+  Urban Bites Backend Core Infrastructure & Utilities Suite    
 ===============================================================
+  Summary: 39 Passed, 0 Failed (Infrastructure Suite)
 
 ===============================================================
   Urban Bites Auth & Staff Management API Verification Suite   
 ===============================================================
   Summary: 52 Passed, 0 Failed (Auth & Staff Suite)
+
 ===============================================================
-  Combined Total: 91 Passed, 0 Failed
+  Urban Bites Master Catalog APIs Verification Suite           
+===============================================================
+  Summary: 76 Passed, 0 Failed (Master Catalog Suite)
+===============================================================
+  Combined Total: 167 Passed, 0 Failed
 ```
 
 ---
@@ -507,3 +513,153 @@ Test Results Output:
   - Deactivated accounts (`is_active = false`) are immediately revoked with HTTP 401 `ACCOUNT_DEACTIVATED`.
   - The in-memory request role is overwritten with the live database role (`req.user.role = user.role_name`).
   - Demoted administrators immediately receive HTTP 403 `FORBIDDEN_ROLE` on admin routes, even with a valid, unexpired token.
+
+---
+
+## 10. Master Catalog APIs (Phase 2 — Task 4A)
+
+### 1. Categories Management (`/api/v1/categories`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/categories` | Authenticated Staff | List categories with search, active filter, and pagination |
+| `GET` | `/api/v1/categories/:id` | Authenticated Staff | Get single category by ID with menu items count |
+| `POST` | `/api/v1/categories` | `ADMIN`, `INVENTORY_MANAGER` | Create new category (duplicate name protected) |
+| `PATCH` | `/api/v1/categories/:id` | `ADMIN`, `INVENTORY_MANAGER` | Update category details (name, description, status) |
+
+#### Query Parameters (`GET /api/v1/categories`):
+- `page` (number, default: 1): Page number
+- `limit` (number, default: 50, max: 100): Page limit
+- `search` (string): Search category name or description
+- `isActive` (`true` \| `false` \| `all`): Active status filter
+
+#### Create Category Example (`POST /api/v1/categories`):
+```json
+// Request Body
+{
+  "name": "Artisanal Breads",
+  "description": "Sourdough, baguettes, and fresh brioche",
+  "is_active": true
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Category created successfully",
+  "data": {
+    "id": 6,
+    "name": "Artisanal Breads",
+    "description": "Sourdough, baguettes, and fresh brioche",
+    "is_active": true,
+    "created_at": "2026-11-02T03:00:00.000Z",
+    "menu_items_count": 0
+  }
+}
+```
+
+---
+
+### 2. Units of Measurement Reference (`/api/v1/units`)
+
+Read-only reference data endpoints providing measurement hierarchy and recursive conversion ratios.
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/units` | Authenticated Staff | List units with conversion ratios and base unit details |
+| `GET` | `/api/v1/units/:id` | Authenticated Staff | Get unit details by ID |
+
+#### Query Parameters (`GET /api/v1/units`):
+- `unitType` (`WEIGHT` \| `VOLUME` \| `COUNT`): Filter by physical unit classification
+- `search` (string): Search unit name or abbreviation
+
+#### Unit Response Example:
+```json
+{
+  "id": 2,
+  "name": "Gram",
+  "abbreviation": "g",
+  "unit_type": "WEIGHT",
+  "base_unit_id": 1,
+  "base_unit": {
+    "id": 1,
+    "name": "Kilogram",
+    "abbreviation": "kg"
+  },
+  "conversion_factor": 0.001,
+  "created_at": "2026-11-01T20:00:00.000Z"
+}
+```
+
+---
+
+### 3. Raw Ingredients Catalog (`/api/v1/ingredients`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/ingredients` | Authenticated Staff | List ingredients with pagination, search, and unit details |
+| `GET` | `/api/v1/ingredients/:id` | Authenticated Staff | Get ingredient by ID with unit and dish category details |
+| `POST` | `/api/v1/ingredients` | `ADMIN`, `INVENTORY_MANAGER` | Create ingredient with unit and category validation |
+| `PATCH` | `/api/v1/ingredients/:id` | `ADMIN`, `INVENTORY_MANAGER` | Update ingredient attributes and threshold levels |
+
+#### Query Parameters (`GET /api/v1/ingredients`):
+- `page` (number, default: 1): Page number
+- `limit` (number, default: 20, max: 100): Page limit
+- `search` (string): Search ingredient name
+- `unit_id` (number): Filter by measurement unit
+- `category_id` (number): Filter ingredients used in dishes of a specific category
+- `isActive` (`true` \| `false` \| `all`): Active status filter
+
+#### Create Ingredient Example (`POST /api/v1/ingredients`):
+```json
+// Request Body
+{
+  "name": "Organic Wild Honey",
+  "unit_id": 1,
+  "category_id": 5,
+  "minimum_stock_level": 2.5,
+  "optimal_par_level": 10.0,
+  "cost_per_unit": 450.0,
+  "is_active": true
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Ingredient created successfully",
+  "data": {
+    "id": 29,
+    "name": "Organic Wild Honey",
+    "unit_id": 1,
+    "unit": {
+      "id": 1,
+      "name": "Kilogram",
+      "abbreviation": "kg",
+      "unit_type": "WEIGHT",
+      "conversion_factor": 1.0,
+      "base_unit_id": null
+    },
+    "minimum_stock_level": 2.5,
+    "optimal_par_level": 10.0,
+    "cost_per_unit": 450.0,
+    "is_active": true,
+    "categories": [
+      { "id": 5, "name": "Desserts" }
+    ],
+    "created_at": "2026-11-02T03:00:00.000Z",
+    "updated_at": "2026-11-02T03:00:00.000Z"
+  }
+}
+```
+
+#### Error Handling Codes:
+- `DUPLICATE_CATEGORY_NAME` (409): Category with specified name already exists.
+- `DUPLICATE_INGREDIENT_NAME` (409): Ingredient with specified name already exists.
+- `INVALID_UNIT_ID` (400): Specified unit of measure does not exist.
+- `INVALID_CATEGORY_ID` (400): Specified category does not exist.
+- `INVALID_PAR_LEVEL` (400): Optimal par level must be $\ge$ minimum stock level.
+- `CATEGORY_NOT_FOUND` (404): Category with ID does not exist.
+- `INGREDIENT_NOT_FOUND` (404): Ingredient with ID does not exist.
+- `FORBIDDEN_ROLE` (403): Staff role lacks modification privileges.
+
