@@ -26,16 +26,16 @@ ON DUPLICATE KEY UPDATE
 -- Default Password: UrbanBites@2026 (bcrypt hash cost 12)
 -- ----------------------------------------------------------------------------
 INSERT INTO `users` (`id`, `role_id`, `username`, `email`, `password_hash`, `full_name`, `phone`, `is_active`) VALUES
-(1, 1, 'rohit_admin', 'rohit.admin@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Rohit Sharma', '+91 98201 11223', TRUE),
-(2, 2, 'priya_inventory', 'priya.patel@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Priya Patel', '+91 98202 22334', TRUE),
-(3, 3, 'vikram_headchef', 'vikram.malhotra@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Vikram Malhotra', '+91 98203 33445', TRUE),
-(4, 3, 'ananya_souschef', 'ananya.sen@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Ananya Sen', '+91 98204 44556', TRUE),
-(5, 4, 'arjun_cashier', 'arjun.verma@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Arjun Verma', '+91 98205 55667', TRUE),
-(6, 4, 'sneha_cashier', 'sneha.kulkarni@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Sneha Kulkarni', '+91 98206 66778', TRUE),
-(7, 4, 'kabir_cashier', 'kabir.mehta@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Kabir Mehta', '+91 98207 77889', TRUE),
-(8, 2, 'deepak_stock', 'deepak.joshi@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Deepak Joshi', '+91 98208 88990', TRUE),
-(9, 3, 'rahul_cook', 'rahul.nair@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Rahul Nair', '+91 98209 99001', TRUE),
-(10, 1, 'kavita_ops', 'kavita.rao@urbanbites.in', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4L5bep2eum', 'Kavita Rao', '+91 98210 00112', TRUE)
+(1, 1, 'rohit_admin', 'rohit.admin@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Rohit Sharma', '+91 98201 11223', TRUE),
+(2, 2, 'priya_inventory', 'priya.patel@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Priya Patel', '+91 98202 22334', TRUE),
+(3, 3, 'vikram_headchef', 'vikram.malhotra@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Vikram Malhotra', '+91 98203 33445', TRUE),
+(4, 3, 'ananya_souschef', 'ananya.sen@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Ananya Sen', '+91 98204 44556', TRUE),
+(5, 4, 'arjun_cashier', 'arjun.verma@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Arjun Verma', '+91 98205 55667', TRUE),
+(6, 4, 'sneha_cashier', 'sneha.kulkarni@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Sneha Kulkarni', '+91 98206 66778', TRUE),
+(7, 4, 'kabir_cashier', 'kabir.mehta@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Kabir Mehta', '+91 98207 77889', TRUE),
+(8, 2, 'deepak_stock', 'deepak.joshi@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Deepak Joshi', '+91 98208 88990', TRUE),
+(9, 3, 'rahul_cook', 'rahul.nair@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Rahul Nair', '+91 98209 99001', TRUE),
+(10, 1, 'kavita_ops', 'kavita.rao@urbanbites.in', '$2b$12$0Ej.8JYDNxlN7sCprp1h4uRpInBZIS/VP0T72ScFJbZ3kL7vKm3V6', 'Kavita Rao', '+91 98210 00112', TRUE)
 ON DUPLICATE KEY UPDATE 
     `full_name` = VALUES(`full_name`),
     `phone` = VALUES(`phone`);

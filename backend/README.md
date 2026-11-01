@@ -177,6 +177,155 @@ router.delete('/users/:id', authenticateJWT, requireRole('ADMIN'), userControlle
 
 // Route accessible by ADMIN or INVENTORY_MANAGER
 router.post('/inventory/batches', authenticateJWT, requireRole('ADMIN', 'INVENTORY_MANAGER'), inventoryController.createBatch);
+```
+
+---
+
+## 6. Authentication & Staff Management API Endpoints
+
+### 6.1 Authentication Endpoints (`/api/v1/auth`)
+
+#### `POST /api/v1/auth/login`
+Authenticates a staff member using either `username` or `email` and password.
+- **Access:** Public
+- **Request Body:**
+  ```json
+  {
+    "identifier": "rohit_admin",
+    "password": "UrbanBites@2026"
+  }
+  ```
+- **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "message": "Login successful",
+    "data": {
+      "user": {
+        "id": 1,
+        "role_id": 1,
+        "role": "ADMIN",
+        "username": "rohit_admin",
+        "email": "rohit.admin@urbanbites.in",
+        "full_name": "Rohit Sharma",
+        "phone": "+91 98201 11223",
+        "is_active": true,
+        "created_at": "2026-11-02T02:00:00.000Z"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "expiresIn": "24h"
+    },
+    "meta": null
+  }
+  ```
+- **Error Response (401 Unauthorized):**
+  ```json
+  {
+    "success": false,
+    "error": {
+      "message": "Invalid username/email or password",
+      "status": 401,
+      "code": "INVALID_CREDENTIALS",
+      "timestamp": "2026-11-02T02:30:00.000Z"
+    }
+  }
+  ```
+
+#### `GET /api/v1/auth/profile`
+Retrieves live profile data directly from MySQL for the currently authenticated staff token.
+- **Access:** Private (Any valid JWT)
+- **Header:** `Authorization: Bearer <token>`
+- **Success Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "message": "Profile retrieved successfully",
+    "data": {
+      "id": 1,
+      "role_id": 1,
+      "role": "ADMIN",
+      "role_description": "Full system access, user management, and system configuration",
+      "username": "rohit_admin",
+      "email": "rohit.admin@urbanbites.in",
+      "full_name": "Rohit Sharma",
+      "phone": "+91 98201 11223",
+      "is_active": true,
+      "created_at": "2026-11-02T02:00:00.000Z",
+      "updated_at": "2026-11-02T02:30:00.000Z"
+    },
+    "meta": null
+  }
+  ```
+
+---
+
+### 6.2 Staff Management Endpoints (`/api/v1/users`)
+All staff management endpoints are strictly restricted to the **ADMIN** role via `requireRole('ADMIN')`.
+
+| Method | Endpoint | Description | Query / Body Params |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/users` | List staff members | `?page=1&limit=20&role=CHEF&isActive=true&search=patel` |
+| `GET` | `/api/v1/users/:id` | Get staff member by ID | URL path param `:id` |
+| `POST` | `/api/v1/users` | Create staff member | Body: `role_id`, `username`, `email`, `password`, `full_name`, `phone?`, `is_active?` |
+| `PATCH`| `/api/v1/users/:id` | Update staff details | Body: `role_id?`, `username?`, `email?`, `password?`, `full_name?`, `phone?`, `is_active?` |
+| `PATCH`| `/api/v1/users/:id/status` | Activate/Deactivate | Body: `{ "is_active": false }` |
+
+#### Creating a Staff Account:
+```http
+POST /api/v1/users HTTP/1.1
+Authorization: Bearer <admin_jwt>
+Content-Type: application/json
+
+{
+  "role_id": 3,
+  "username": "sanjay_linecook",
+  "email": "sanjay.cook@urbanbites.in",
+  "password": "SecurePassword@2026",
+  "full_name": "Sanjay Verma",
+  "phone": "+91 98205 99887",
+  "is_active": true
+}
+```
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Staff member account created successfully",
+  "data": {
+    "id": 11,
+    "role_id": 3,
+    "role_name": "CHEF",
+    "role_description": "Kitchen management, recipe creation, production, and food waste auditing",
+    "username": "sanjay_linecook",
+    "email": "sanjay.cook@urbanbites.in",
+    "full_name": "Sanjay Verma",
+    "phone": "+91 98205 99887",
+    "is_active": true,
+    "created_at": "2026-11-02T02:35:00.000Z"
+  },
+  "meta": null
+}
+```
+
+---
+
+### 6.3 Security Controls & Business Protections
+
+1. **Anti-User Enumeration:**
+   - Both invalid usernames and incorrect passwords return identical generic `401 Unauthorized` responses (`INVALID_CREDENTIALS`).
+2. **Password Hash Protection:**
+   - `password_hash` is stripped by DAO projection in `UserModel.findById` and `UserModel.findAll`. It is never returned in any response envelope.
+3. **Last Active Admin Protection:**
+   - The system prevents an administrator from deactivating or demoting the last active account with `ADMIN` privileges (`LAST_ADMIN_PROTECTION`).
+4. **Self-Privilege Escalation Prevention:**
+   - Users updating their own profiles cannot alter their own `role_id` (`SELF_ROLE_CHANGE_FORBIDDEN`).
+5. **Immediate Token Revocation on Deactivation:**
+   - `GET /api/v1/auth/profile` queries fresh user status from MySQL. If an admin deactivates an account, existing JWTs for that account immediately receive `401 ACCOUNT_DEACTIVATED`.
+6. **MongoDB Atlas Audit Logging:**
+   - Security-sensitive actions (`LOGIN_SUCCESS`, `LOGIN_FAILED`, `STAFF_CREATED`, `STAFF_UPDATED`, `STAFF_DEACTIVATED`) are recorded in MongoDB Atlas. Passwords, JWT tokens, and credentials are automatically stripped.
 
 // Route accessible by CHEF or ADMIN
 router.post('/waste', authenticateJWT, requireRole('ADMIN', 'CHEF'), wasteController.logWaste);
