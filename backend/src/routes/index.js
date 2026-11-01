@@ -5,6 +5,7 @@ import userRoutes from './v1/user.routes.js';
 import categoryRoutes from './v1/category.routes.js';
 import unitRoutes from './v1/unit.routes.js';
 import ingredientRoutes from './v1/ingredient.routes.js';
+import menuItemRoutes from './v1/menuItem.routes.js';
 
 const apiRouter = Router();
 
@@ -17,5 +18,6 @@ apiRouter.use('/v1/users', userRoutes);
 apiRouter.use('/v1/categories', categoryRoutes);
 apiRouter.use('/v1/units', unitRoutes);
 apiRouter.use('/v1/ingredients', ingredientRoutes);
+apiRouter.use('/v1/menu-items', menuItemRoutes);
 
 export default apiRouter;

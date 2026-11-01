@@ -475,8 +475,13 @@ Test Results Output:
   Urban Bites Master Catalog APIs Verification Suite           
 ===============================================================
   Summary: 76 Passed, 0 Failed (Master Catalog Suite)
+
 ===============================================================
-  Combined Total: 167 Passed, 0 Failed
+  Urban Bites Menu Item Management APIs Verification Suite     
+===============================================================
+  Summary: 55 Passed, 0 Failed (Menu Item Suite)
+===============================================================
+  Combined Total: 222 Passed, 0 Failed
 ```
 
 ---
@@ -662,4 +667,105 @@ Read-only reference data endpoints providing measurement hierarchy and recursive
 - `CATEGORY_NOT_FOUND` (404): Category with ID does not exist.
 - `INGREDIENT_NOT_FOUND` (404): Ingredient with ID does not exist.
 - `FORBIDDEN_ROLE` (403): Staff role lacks modification privileges.
+
+---
+
+## 11. Menu Item Management APIs (Phase 2 — Task 4B.1)
+
+Sellable culinary dishes linked to menu categories with recipe bill-of-materials resolution.
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/menu-items` | Authenticated Staff | List menu items with search, category filter, availability status, and pagination |
+| `GET` | `/api/v1/menu-items/:id` | Authenticated Staff | Get menu item by ID with resolved category and recipe yield/instructions |
+| `POST` | `/api/v1/menu-items` | `ADMIN`, `INVENTORY_MANAGER` | Create new menu item with category reference validation and duplicate protection |
+| `PATCH` | `/api/v1/menu-items/:id` | `ADMIN`, `INVENTORY_MANAGER` | Update menu item details, category reassignment, price, or availability |
+
+#### Query Parameters (`GET /api/v1/menu-items`):
+- `page` (number, default: 1): Page number
+- `limit` (number, default: 20, max: 100): Page limit
+- `search` (string): Keyword search against menu item name or description
+- `category_id` (number): Filter by parent menu category
+- `isAvailable` (`true` \| `false` \| `all`): Availability status filter
+
+#### Create Menu Item Example (`POST /api/v1/menu-items`):
+```json
+// Request Body
+{
+  "category_id": 2,
+  "name": "Truffle Mushroom Swiss Burger",
+  "description": "Char-grilled patty with wild mushrooms, Swiss cheese, and truffle aioli",
+  "selling_price": 240.0,
+  "preparation_time_mins": 15,
+  "is_available": true
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Menu item created successfully",
+  "data": {
+    "id": 16,
+    "category_id": 2,
+    "category": {
+      "id": 2,
+      "name": "Burgers",
+      "description": "Signature gourmet handcrafted burgers with house fries"
+    },
+    "name": "Truffle Mushroom Swiss Burger",
+    "description": "Char-grilled patty with wild mushrooms, Swiss cheese, and truffle aioli",
+    "selling_price": 240,
+    "preparation_time_mins": 15,
+    "is_available": true,
+    "has_recipe": false,
+    "recipe": null,
+    "created_at": "2026-11-02T03:14:00.000Z",
+    "updated_at": "2026-11-02T03:14:00.000Z"
+  },
+  "meta": null
+}
+```
+
+#### Fetch Menu Item by ID Example (`GET /api/v1/menu-items/1`):
+```json
+// 200 OK Response
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Menu item details retrieved successfully",
+  "data": {
+    "id": 1,
+    "category_id": 1,
+    "category": {
+      "id": 1,
+      "name": "Appetizers",
+      "description": "Starters, fried delicacies, and finger foods"
+    },
+    "name": "Crispy French Fries",
+    "description": "Deep fried golden potato batons seasoned with rock salt and herbs",
+    "selling_price": 110,
+    "preparation_time_mins": 10,
+    "is_available": true,
+    "has_recipe": true,
+    "recipe": {
+      "id": 1,
+      "yield_servings": 1,
+      "instructions": "Cut 250g potatoes into batons, blanch in salted water, and flash fry at 180C until crisp.",
+      "created_at": "2026-11-01T20:00:00.000Z"
+    },
+    "created_at": "2026-11-01T20:00:00.000Z",
+    "updated_at": "2026-11-01T20:00:00.000Z"
+  }
+}
+```
+
+#### Error Handling Codes:
+- `DUPLICATE_MENU_ITEM_NAME` (409): A menu item with this name already exists.
+- `INVALID_CATEGORY_ID` (400): Specified `category_id` does not exist in `categories`.
+- `INVALID_PRICE` (400): Selling price cannot be negative.
+- `INVALID_PREP_TIME` (400): Preparation time in minutes cannot be negative.
+- `MENU_ITEM_NOT_FOUND` (404): Menu item with specified ID does not exist.
+- `FORBIDDEN_ROLE` (403): Staff role lacks menu item creation or update privileges.
+
 
