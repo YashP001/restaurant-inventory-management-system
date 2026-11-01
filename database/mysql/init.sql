@@ -1,7 +1,7 @@
--- ==========================================================
--- Phase 0: MySQL Database Initialization Script
+-- ============================================================================
+-- Master MySQL Initialization Script
 -- Restaurant & Food Inventory Management System
--- ==========================================================
+-- ============================================================================
 
 CREATE DATABASE IF NOT EXISTS `restaurant_inventory_db`
   DEFAULT CHARACTER SET utf8mb4
@@ -9,5 +9,7 @@ CREATE DATABASE IF NOT EXISTS `restaurant_inventory_db`
 
 USE `restaurant_inventory_db`;
 
--- Informational verification query
-SELECT 'Database restaurant_inventory_db initialized successfully.' AS status;
+-- Source Schema v1 (Includes all 21 tables, constraints, foreign keys and indexes)
+SOURCE 01_schema_v1.sql;
+
+SELECT 'Database restaurant_inventory_db and Schema v1 initialized successfully.' AS status;
