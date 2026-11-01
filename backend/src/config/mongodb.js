@@ -73,6 +73,7 @@ export async function checkMongoDBConnection() {
       connected: true,
       status: 'UP',
       latencyMs,
+      host: mongoose.connection.host || 'MongoDB Atlas',
       database: mongoose.connection.name || 'restaurant_inventory_logs',
       readyState: mongoose.connection.readyState
     };

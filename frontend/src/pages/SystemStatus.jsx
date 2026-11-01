@@ -29,7 +29,7 @@ export function SystemStatus({ healthData, loading, lastUpdated }) {
     {
       title: 'MongoDB NoSQL Database',
       role: 'Logs, Audit Trail & Metadata',
-      target: 'mongodb://localhost:27017',
+      target: mongodb.details?.host || 'MongoDB Cluster',
       icon: Layers,
       status: mongodb.status,
       latencyMs: mongodb.details?.latencyMs,
