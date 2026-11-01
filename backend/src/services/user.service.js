@@ -178,8 +178,15 @@ export const UserService = {
       fieldsToUpdate.is_active = updateData.is_active;
     }
 
-    // 7. Apply updates
-    await UserModel.update(id, fieldsToUpdate);
+    // 7. Apply updates within an ACID transaction with FOR UPDATE row locking
+    try {
+      await UserModel.updateUserSafely(id, fieldsToUpdate);
+    } catch (err) {
+      if (err.errorCode === 'LAST_ADMIN_PROTECTION') {
+        throw ApiError.badRequest(err.message, 'LAST_ADMIN_PROTECTION');
+      }
+      throw err;
+    }
 
     // 8. Record audit log in MongoDB Atlas
     await AuditLog.record({
@@ -201,7 +208,7 @@ export const UserService = {
 
   /**
    * Updates staff activation status (Deactivate / Reactivate)
-   * Enforces last active admin protection
+   * Enforces concurrency-safe last active admin protection via transaction and row locking
    */
   async updateUserStatus(id, isActive, actingUser, requestId = null) {
     const existing = await UserModel.findById(id);
@@ -209,15 +216,15 @@ export const UserService = {
       throw ApiError.notFound(`Staff member with ID ${id} not found`, 'USER_NOT_FOUND');
     }
 
-    // Last Active Admin Protection
-    if (!isActive && existing.role_name === 'ADMIN' && existing.is_active) {
-      const activeAdmins = await UserModel.countActiveAdmins();
-      if (activeAdmins <= 1) {
-        throw ApiError.badRequest('Cannot deactivate the last active administrator account', 'LAST_ADMIN_PROTECTION');
+    // Transaction-safe execution with row-level locking
+    try {
+      await UserModel.updateUserStatusSafely(id, isActive);
+    } catch (err) {
+      if (err.errorCode === 'LAST_ADMIN_PROTECTION') {
+        throw ApiError.badRequest(err.message, 'LAST_ADMIN_PROTECTION');
       }
+      throw err;
     }
-
-    await UserModel.updateStatus(id, isActive);
 
     // Record Audit Log in MongoDB Atlas
     await AuditLog.record({

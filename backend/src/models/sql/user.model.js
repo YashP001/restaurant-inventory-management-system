@@ -205,13 +205,170 @@ export const UserModel = {
   },
 
   /**
+   * Updates user activation status within an ACID transaction using row-level FOR UPDATE locking
+   * Guarantees concurrency safety against simultaneous last-admin deactivation attempts
+   */
+  async updateUserStatusSafely(id, isActive) {
+    const pool = getMySQLPool();
+    const conn = await pool.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      // Row-lock all ADMIN rows to serialize concurrent checks
+      const [adminRows] = await conn.query(
+        `SELECT u.id, u.is_active, r.name AS role_name 
+         FROM \`users\` u 
+         JOIN \`roles\` r ON r.id = u.role_id 
+         WHERE r.name = 'ADMIN' 
+         FOR UPDATE;`
+      );
+
+      // Row-lock target user
+      const [targetRows] = await conn.query(
+        `SELECT u.id, u.username, u.is_active, r.name AS role_name 
+         FROM \`users\` u 
+         JOIN \`roles\` r ON r.id = u.role_id 
+         WHERE u.id = ? 
+         FOR UPDATE;`,
+        [id]
+      );
+
+      const target = targetRows[0];
+      if (!target) {
+        await conn.rollback();
+        return null;
+      }
+
+      // Last active admin protection check
+      if (!isActive && target.role_name === 'ADMIN' && target.is_active) {
+        const activeAdminCount = adminRows.filter(a => a.is_active === 1 || a.is_active === true).length;
+        if (activeAdminCount <= 1) {
+          await conn.rollback();
+          const err = new Error('Cannot deactivate the last active administrator account');
+          err.statusCode = 400;
+          err.errorCode = 'LAST_ADMIN_PROTECTION';
+          err.isOperational = true;
+          throw err;
+        }
+      }
+
+      await conn.query('UPDATE `users` SET `is_active` = ? WHERE `id` = ?;', [isActive ? 1 : 0, id]);
+      await conn.commit();
+      return target;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      conn.release();
+    }
+  },
+
+  /**
+   * Updates user fields within an ACID transaction with FOR UPDATE row locking
+   * Guarantees concurrency safety against simultaneous last-admin demotions or updates
+   */
+  async updateUserSafely(id, fields) {
+    const pool = getMySQLPool();
+    const conn = await pool.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      const isRoleChange = fields.role_id !== undefined;
+      const isStatusChange = fields.is_active !== undefined;
+
+      // Lock all ADMIN rows if changing role or status
+      let adminRows = [];
+      if (isRoleChange || isStatusChange) {
+        const [lockedAdmins] = await conn.query(
+          `SELECT u.id, u.is_active, r.name AS role_name 
+           FROM \`users\` u 
+           JOIN \`roles\` r ON r.id = u.role_id 
+           WHERE r.name = 'ADMIN' 
+           FOR UPDATE;`
+        );
+        adminRows = lockedAdmins;
+      }
+
+      // Lock target user
+      const [targetRows] = await conn.query(
+        `SELECT u.id, u.username, u.role_id, u.is_active, r.name AS role_name 
+         FROM \`users\` u 
+         JOIN \`roles\` r ON r.id = u.role_id 
+         WHERE u.id = ? 
+         FOR UPDATE;`,
+        [id]
+      );
+
+      const target = targetRows[0];
+      if (!target) {
+        await conn.rollback();
+        return null;
+      }
+
+      // Check last active admin protection if demoting from ADMIN
+      if (isRoleChange && target.role_name === 'ADMIN') {
+        const [newRoleRows] = await conn.query('SELECT id, name FROM `roles` WHERE id = ?;', [fields.role_id]);
+        const newRole = newRoleRows[0];
+        if (newRole && newRole.name !== 'ADMIN' && target.is_active) {
+          const activeAdminCount = adminRows.filter(a => a.is_active === 1 || a.is_active === true).length;
+          if (activeAdminCount <= 1) {
+            await conn.rollback();
+            const err = new Error('Cannot reassign role: This is the last active administrator account');
+            err.statusCode = 400;
+            err.errorCode = 'LAST_ADMIN_PROTECTION';
+            err.isOperational = true;
+            throw err;
+          }
+        }
+      }
+
+      // Check last active admin protection if deactivating
+      if (isStatusChange && !fields.is_active && target.role_name === 'ADMIN' && target.is_active) {
+        const activeAdminCount = adminRows.filter(a => a.is_active === 1 || a.is_active === true).length;
+        if (activeAdminCount <= 1) {
+          await conn.rollback();
+          const err = new Error('Cannot deactivate the last active administrator account');
+          err.statusCode = 400;
+          err.errorCode = 'LAST_ADMIN_PROTECTION';
+          err.isOperational = true;
+          throw err;
+        }
+      }
+
+      // Build parameterized update query
+      const setClauses = [];
+      const params = [];
+      const allowedFields = ['role_id', 'username', 'email', 'password_hash', 'full_name', 'phone', 'is_active'];
+
+      for (const [key, value] of Object.entries(fields)) {
+        if (allowedFields.includes(key)) {
+          setClauses.push(`\`${key}\` = ?`);
+          params.push(key === 'is_active' ? (value ? 1 : 0) : value);
+        }
+      }
+
+      if (setClauses.length > 0) {
+        params.push(id);
+        await conn.query(`UPDATE \`users\` SET ${setClauses.join(', ')} WHERE \`id\` = ?;`, params);
+      }
+
+      await conn.commit();
+      return target;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      conn.release();
+    }
+  },
+
+  /**
    * Updates user activation status
    */
   async updateStatus(id, isActive) {
-    const pool = getMySQLPool();
-    const query = `UPDATE \`users\` SET \`is_active\` = ? WHERE \`id\` = ?;`;
-    const [result] = await pool.query(query, [isActive ? 1 : 0, id]);
-    return result.affectedRows > 0;
+    return this.updateUserStatusSafely(id, isActive);
   },
 
   /**

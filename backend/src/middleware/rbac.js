@@ -32,6 +32,10 @@ export function requireRole(...allowedRoles) {
       return next(ApiError.unauthorized('User identity not authenticated', 'UNAUTHENTICATED'));
     }
 
+    if (req.user.is_active === false) {
+      return next(ApiError.unauthorized('Authentication failed: Account has been deactivated. Access revoked.', 'ACCOUNT_DEACTIVATED'));
+    }
+
     const userRole = req.user.role.toUpperCase();
 
     if (!normalizedRoles.includes(userRole)) {

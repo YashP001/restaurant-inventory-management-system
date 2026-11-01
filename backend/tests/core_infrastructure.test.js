@@ -9,6 +9,7 @@ import { authenticateJWT, generateToken } from '../src/middleware/auth.js';
 import { requireRole } from '../src/middleware/rbac.js';
 import { validateBody } from '../src/middleware/validate.js';
 import { AuditLog } from '../src/models/mongo/AuditLog.js';
+import { closeMySQLPool } from '../src/config/mysql.js';
 
 // Test Runner Engine
 let passed = 0;
@@ -92,7 +93,7 @@ async function runTests() {
   let validNextCalled = false;
   let validNextError = null;
 
-  authenticateJWT(validReq, {}, (err) => {
+  await authenticateJWT(validReq, {}, (err) => {
     validNextCalled = true;
     validNextError = err;
   });
@@ -108,7 +109,7 @@ async function runTests() {
   const missingReq = { headers: {} };
   let missingErr = null;
 
-  authenticateJWT(missingReq, {}, (err) => { missingErr = err; });
+  await authenticateJWT(missingReq, {}, (err) => { missingErr = err; });
   assert(missingErr instanceof ApiError, 'Missing token produces ApiError');
   assert(missingErr.statusCode === 401, 'Status code is 401');
   assert(missingErr.errorCode === 'TOKEN_MISSING', 'Error code is TOKEN_MISSING');
@@ -120,7 +121,7 @@ async function runTests() {
   const invalidReq = { headers: { authorization: 'Bearer this_is_a_tampered_invalid_token' } };
   let invalidErr = null;
 
-  authenticateJWT(invalidReq, {}, (err) => { invalidErr = err; });
+  await authenticateJWT(invalidReq, {}, (err) => { invalidErr = err; });
   assert(invalidErr.statusCode === 401, 'Invalid token returns 401');
   assert(invalidErr.errorCode === 'INVALID_TOKEN', 'Error code is INVALID_TOKEN');
 
@@ -132,7 +133,7 @@ async function runTests() {
   const expiredReq = { headers: { authorization: `Bearer ${expiredToken}` } };
   let expiredErr = null;
 
-  authenticateJWT(expiredReq, {}, (err) => { expiredErr = err; });
+  await authenticateJWT(expiredReq, {}, (err) => { expiredErr = err; });
   assert(expiredErr.statusCode === 401, 'Expired token returns 401');
   assert(expiredErr.errorCode === 'TOKEN_EXPIRED', 'Error code is TOKEN_EXPIRED');
 
@@ -140,7 +141,7 @@ async function runTests() {
   // TEST 8: Role-Based Access Control (RBAC) - Authorized
   // --------------------------------------------------------------------------
   console.log('\n[Test 8] RBAC: Authorized Role (Admin)');
-  const adminReq = { user: { id: 1, role: 'ADMIN' } };
+  const adminReq = { user: { id: 1, role: 'ADMIN', is_active: true } };
   let adminNextCalled = false;
   let adminNextErr = null;
 
@@ -155,7 +156,7 @@ async function runTests() {
   // TEST 9: Role-Based Access Control (RBAC) - Unauthorized
   // --------------------------------------------------------------------------
   console.log('\n[Test 9] RBAC: Unauthorized Role (Cashier accessing Admin route)');
-  const cashierReq = { user: { id: 5, role: 'CASHIER' } };
+  const cashierReq = { user: { id: 5, role: 'CASHIER', is_active: true } };
   let cashierErr = null;
 
   requireRole('ADMIN', 'INVENTORY_MANAGER')(cashierReq, {}, (err) => {
@@ -165,6 +166,15 @@ async function runTests() {
   assert(cashierErr instanceof ApiError, 'Unauthorized role produces ApiError');
   assert(cashierErr.statusCode === 403, 'Unauthorized role returns 403 Forbidden');
   assert(cashierErr.errorCode === 'FORBIDDEN_ROLE', 'Error code is FORBIDDEN_ROLE');
+
+  // Inactive user in RBAC produces 401 ACCOUNT_DEACTIVATED
+  const inactiveReq = { user: { id: 5, role: 'ADMIN', is_active: false } };
+  let inactiveErr = null;
+  requireRole('ADMIN')(inactiveReq, {}, (err) => {
+    inactiveErr = err;
+  });
+  assert(inactiveErr?.statusCode === 401, 'Deactivated account returns 401 Unauthorized in RBAC');
+  assert(inactiveErr?.errorCode === 'ACCOUNT_DEACTIVATED', 'Deactivated account error code is ACCOUNT_DEACTIVATED');
 
   // --------------------------------------------------------------------------
   // TEST 10: Request Validation Middleware with Zod
@@ -238,6 +248,7 @@ async function runTests() {
   console.log('  🧹 Cleaned up verification test document from MongoDB Atlas');
 
   await closeMongoDB();
+  await closeMySQLPool();
 
   // --------------------------------------------------------------------------
   // Summary
@@ -249,6 +260,7 @@ async function runTests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runTests().catch(err => {

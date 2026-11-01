@@ -120,7 +120,13 @@ async function runTestSuite() {
   const inactiveLoginData = await inactiveLoginRes.json();
 
   assert(inactiveLoginRes.status === 401, 'HTTP status is 401 Unauthorized');
-  assert(inactiveLoginData.error.code === 'ACCOUNT_DEACTIVATED', 'Error code is ACCOUNT_DEACTIVATED');
+  assert(inactiveLoginData.error.code === 'INVALID_CREDENTIALS', 'Error code is INVALID_CREDENTIALS (anti-enumeration)');
+  assert(inactiveLoginData.error.message.includes('Invalid username/email or password'), 'Generic error message returned for inactive account');
+  assert(
+    badPassData.error.message === unknownUserData.error.message &&
+    unknownUserData.error.message === inactiveLoginData.error.message,
+    'Anti-enumeration: nonexistent, wrong password, and inactive accounts return identical message'
+  );
 
   // --------------------------------------------------------------------------
   // TEST 5: Profile Without JWT
@@ -372,7 +378,9 @@ async function runTestSuite() {
   const staffCreatedLog = await AuditLog.findOne({ action: 'STAFF_CREATED', 'metadata.createdUsername': 'temp_deact_chef' }).sort({ createdAt: -1 });
   assert(Boolean(staffCreatedLog), 'STAFF_CREATED audit log found in MongoDB Atlas');
 
-  // Clean up isolated test users from MySQL and MongoDB
+  const inactiveAuditLog = await AuditLog.findOne({ action: 'LOGIN_FAILED', 'metadata.reason': 'ACCOUNT_DEACTIVATED' }).sort({ createdAt: -1 });
+  assert(Boolean(inactiveAuditLog), 'Audit log internally records reason ACCOUNT_DEACTIVATED without leaking it via API response');
+
   const conn = await mysql.createConnection({
     host: env.MYSQL.host,
     port: env.MYSQL.port,
@@ -381,16 +389,133 @@ async function runTestSuite() {
     database: env.MYSQL.database
   });
 
+  // --------------------------------------------------------------------------
+  // TEST 15: Demoted Admin Immediate Revocation (Dynamic Current-Role Authorization)
+  // --------------------------------------------------------------------------
+  console.log('\n[Test 15] Demoted Admin Immediate Revocation (Dynamic Current-Role Authorization)');
+  // 1. Create a temporary admin user
+  const tempAdminRes = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`
+    },
+    body: JSON.stringify({
+      role_id: 1, // ADMIN
+      username: 'temp_demoted_admin',
+      email: 'temp.demoted.admin@urbanbites.in',
+      password: 'TempPassword@2026',
+      full_name: 'Temp Demoted Admin'
+    })
+  });
+  const tempAdminData = await tempAdminRes.json();
+  const tempAdminUserId = tempAdminData.data?.id;
+
+  // 2. Log in as temp admin to get a valid JWT with role: 'ADMIN' in claims
+  const tempAdminLoginRes = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier: 'temp_demoted_admin',
+      password: 'TempPassword@2026'
+    })
+  });
+  const tempAdminLoginData = await tempAdminLoginRes.json();
+  const oldAdminJwt = tempAdminLoginData.data.token;
+
+  // 3. Verify oldAdminJwt initially works for admin route
+  const preDemoteRes = await fetch(`${BASE_URL}/users`, {
+    headers: { Authorization: `Bearer ${oldAdminJwt}` }
+  });
+  assert(preDemoteRes.status === 200, 'Temp admin initially has access to /api/v1/users (200 OK)');
+
+  // 4. Demote temp admin to CASHIER (role_id: 4) using primary admin
+  const demoteRes = await fetch(`${BASE_URL}/users/${tempAdminUserId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`
+    },
+    body: JSON.stringify({
+      role_id: 4 // CASHIER
+    })
+  });
+  assert(demoteRes.status === 200, 'Temp admin successfully demoted to CASHIER in MySQL');
+
+  // 5. Try to access admin-only route with the unexpired JWT that still claims role: 'ADMIN'
+  const postDemoteRes = await fetch(`${BASE_URL}/users`, {
+    headers: { Authorization: `Bearer ${oldAdminJwt}` }
+  });
+  const postDemoteData = await postDemoteRes.json();
+
+  assert(postDemoteRes.status === 403, 'Demoted admin immediately rejected with 403 Forbidden using old unexpired JWT');
+  assert(postDemoteData.error.code === 'FORBIDDEN_ROLE', 'Error code is FORBIDDEN_ROLE (fresh MySQL role lookup enforced)');
+
+  // --------------------------------------------------------------------------
+  // TEST 16: Concurrency Simulation for Last Active Admin Protection
+  // --------------------------------------------------------------------------
+  console.log('\n[Test 16] Concurrency Simulation for Last Active Admin Protection');
+  // We have 2 active admins in database: Rohit (id: 1) and Kavita (id: 10)
+  // Fire simultaneous deactivation requests against both admins using Promise.all
+  const [resAdmin1, resAdmin10] = await Promise.all([
+    fetch(`${BASE_URL}/users/1/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ is_active: false })
+    }),
+    fetch(`${BASE_URL}/users/10/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ is_active: false })
+    })
+  ]);
+
+  const [dataAdmin1, dataAdmin10] = await Promise.all([
+    resAdmin1.json(),
+    resAdmin10.json()
+  ]);
+
+  // Under concurrency protection with row locking, at least one MUST be rejected with LAST_ADMIN_PROTECTION
+  const atLeastOneRejected = (resAdmin1.status === 400 && dataAdmin1.error.code === 'LAST_ADMIN_PROTECTION') ||
+                             (resAdmin10.status === 400 && dataAdmin10.error.code === 'LAST_ADMIN_PROTECTION');
+  assert(atLeastOneRejected, 'Concurrent last-admin deactivation attempt: at least one request rejected with LAST_ADMIN_PROTECTION (400)');
+
+  // Verify database state: at least 1 active admin remains
+  const [adminCountRows] = await conn.execute(
+    `SELECT COUNT(*) AS active_admins FROM users u
+     JOIN roles r ON u.role_id = r.id
+     WHERE r.name = 'ADMIN' AND u.is_active = 1`
+  );
+  const remainingActiveAdmins = adminCountRows[0].active_admins;
+  assert(remainingActiveAdmins >= 1, `Concurrency-safe guarantee: At least 1 active admin remains in MySQL (actual: ${remainingActiveAdmins})`);
+
+  // Restore both admins to active state
+  await conn.execute("UPDATE users SET is_active = 1 WHERE username IN ('rohit_admin', 'kavita_admin')");
+  console.log('  🛡️ Restored both Rohit and Kavita to active status');
+
+  // Clean up isolated test users from MySQL and MongoDB
   if (tempUserId) {
     await conn.execute('DELETE FROM users WHERE id = ?', [tempUserId]);
   }
   if (tempDeactUserId) {
     await conn.execute('DELETE FROM users WHERE id = ?', [tempDeactUserId]);
   }
+  if (tempAdminUserId) {
+    await conn.execute('DELETE FROM users WHERE id = ?', [tempAdminUserId]);
+  }
   await conn.end();
 
   // Clean up test audit logs
-  await AuditLog.deleteMany({ action: { $in: ['STAFF_CREATED', 'STAFF_DEACTIVATED'] }, 'metadata.createdUsername': { $in: ['temp_inactive_cashier', 'temp_deact_chef'] } });
+  await AuditLog.deleteMany({
+    action: { $in: ['STAFF_CREATED', 'STAFF_DEACTIVATED', 'STAFF_UPDATED'] },
+    'metadata.createdUsername': { $in: ['temp_inactive_cashier', 'temp_deact_chef', 'temp_demoted_admin'] }
+  });
   console.log('  🧹 Cleaned up isolated test staff accounts from MySQL & MongoDB Atlas');
 
   await closeMongoDB();
@@ -405,6 +530,7 @@ async function runTestSuite() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runTestSuite().catch(err => {

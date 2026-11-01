@@ -462,6 +462,48 @@ Test Results Output:
   🧹 Cleaned up verification test document from MongoDB Atlas
 
 ===============================================================
-  Summary: 37 Passed, 0 Failed
+  Summary: 39 Passed, 0 Failed (Infrastructure Suite)
 ===============================================================
+
+===============================================================
+  Urban Bites Auth & Staff Management API Verification Suite   
+===============================================================
+  Summary: 52 Passed, 0 Failed (Auth & Staff Suite)
+===============================================================
+  Combined Total: 91 Passed, 0 Failed
 ```
+
+---
+
+## 9. Security Hardening Architecture (Phase 2 — Task 3)
+
+### 1. Login Enumeration & Account Status Protection
+- **Generic 401 Response:** All failed authentication attempts (nonexistent username/email, incorrect password, or deactivated account) return the exact same generic HTTP 401 response:
+  ```json
+  {
+    "success": false,
+    "error": {
+      "message": "Invalid username/email or password",
+      "status": 401,
+      "code": "INVALID_CREDENTIALS"
+    }
+  }
+  ```
+- **Forensic Audit Logging:** While the external response never leaks whether an account exists or is inactive, internal security logs recorded in MongoDB Atlas retain the specific failure reason (`USER_NOT_FOUND`, `INVALID_PASSWORD`, `ACCOUNT_DEACTIVATED`) without storing passwords or tokens.
+
+### 2. Concurrency-Safe Last-Active-Admin Protection
+- **The Threat:** Race conditions where concurrent requests simultaneously check the active admin count (`activeAdmins <= 1`) and proceed to deactivate/demote both administrators, leaving the system with 0 active admins.
+- **The Defense:** Implemented in `UserModel.updateUserStatusSafely` and `UserModel.updateUserSafely`:
+  - Executes inside a MySQL InnoDB ACID transaction (`START TRANSACTION`).
+  - Acquires exclusive row locks via `SELECT ... FOR UPDATE` on all active `ADMIN` accounts and the target user row.
+  - Re-evaluates active administrator count under row lock before applying the mutation.
+  - Automatically issues `ROLLBACK` and throws `LAST_ADMIN_PROTECTION` (HTTP 400) if the operation would leave zero active administrators.
+- **Verification:** Verified via automated concurrent simulation with `Promise.all` attempting parallel deactivations of both active administrators. Exactly one is rejected with `LAST_ADMIN_PROTECTION`, ensuring at least 1 active administrator remains.
+
+### 3. Dynamic Current-Role & Status Authorization
+- **The Threat:** Stale JWT claims. A user granted an `ADMIN` role who is subsequently demoted to `CASHIER` or deactivated could continue executing admin actions for up to 24 hours using their existing unexpired JWT.
+- **The Defense:** Implemented in `authenticateJWT` and `requireRole`:
+  - Every authenticated request dynamically retrieves the user's fresh status and role from MySQL (`UserModel.findById(decoded.id)`).
+  - Deactivated accounts (`is_active = false`) are immediately revoked with HTTP 401 `ACCOUNT_DEACTIVATED`.
+  - The in-memory request role is overwritten with the live database role (`req.user.role = user.role_name`).
+  - Demoted administrators immediately receive HTTP 403 `FORBIDDEN_ROLE` on admin routes, even with a valid, unexpired token.

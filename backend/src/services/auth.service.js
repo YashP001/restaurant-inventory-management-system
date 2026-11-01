@@ -55,10 +55,8 @@ export const AuthService = {
           userAgent
         }
       });
-      throw ApiError.unauthorized(
-        'Your staff account has been deactivated. Please contact a restaurant administrator.',
-        'ACCOUNT_DEACTIVATED'
-      );
+      // Return identical generic error response to prevent user and status enumeration
+      throw genericAuthError();
     }
 
     // 4. Compare password with bcrypt hash
