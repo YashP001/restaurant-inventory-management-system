@@ -8,6 +8,8 @@ import ingredientRoutes from './v1/ingredient.routes.js';
 import menuItemRoutes from './v1/menuItem.routes.js';
 import recipeRoutes from './v1/recipe.routes.js';
 import inventoryRoutes from './v1/inventory.routes.js';
+import supplierRoutes from './v1/supplier.routes.js';
+import purchaseOrderRoutes from './v1/purchaseOrder.routes.js';
 
 const apiRouter = Router();
 
@@ -23,5 +25,7 @@ apiRouter.use('/v1/ingredients', ingredientRoutes);
 apiRouter.use('/v1/menu-items', menuItemRoutes);
 apiRouter.use('/v1/recipes', recipeRoutes);
 apiRouter.use('/v1/inventory', inventoryRoutes);
+apiRouter.use('/v1/suppliers', supplierRoutes);
+apiRouter.use('/v1/purchase-orders', purchaseOrderRoutes);
 
 export default apiRouter;

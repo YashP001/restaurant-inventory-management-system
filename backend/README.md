@@ -1203,6 +1203,43 @@ Both adjustment and waste endpoints adhere to strict ACID transaction protocols:
 - `WASTE_RECORD_NOT_FOUND` (404): Waste record does not exist.
 - `FORBIDDEN_ROLE` (403): Staff role lacks modification privileges.
 
+---
+
+## 16. Supplier and Purchase Order Management APIs (Phase 2 — Task 5C)
+
+### 1. Supplier Management (`/api/v1/suppliers`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/suppliers` | Authenticated Staff | Paginated list of suppliers with search and active status filter |
+| `GET` | `/api/v1/suppliers/:id` | Authenticated Staff | Get supplier details including mapped ingredient catalog |
+| `POST` | `/api/v1/suppliers` | `ADMIN`, `INVENTORY_MANAGER` | Create new supplier (duplicate name & email protected) |
+| `PATCH` | `/api/v1/suppliers/:id` | `ADMIN`, `INVENTORY_MANAGER` | Update supplier details and active status |
+| `GET` | `/api/v1/suppliers/:id/ingredients` | Authenticated Staff | List all ingredients mapped to a supplier |
+| `POST` | `/api/v1/suppliers/:id/ingredients` | `ADMIN`, `INVENTORY_MANAGER` | Map ingredient with contract unit cost and MOQ |
+| `DELETE` | `/api/v1/suppliers/:id/ingredients/:ingredientId` | `ADMIN`, `INVENTORY_MANAGER` | Unmap ingredient from supplier catalog |
+
+### 2. Purchase Order Management (`/api/v1/purchase-orders`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/purchase-orders` | Authenticated Staff | Paginated list of purchase orders with status/supplier filters |
+| `GET` | `/api/v1/purchase-orders/:id` | Authenticated Staff | Full PO details by ID or PO number with line items |
+| `POST` | `/api/v1/purchase-orders` | `ADMIN`, `INVENTORY_MANAGER` | Create new PO in `DRAFT` status with auto-generated PO number |
+| `POST` | `/api/v1/purchase-orders/:id/items` | `ADMIN`, `INVENTORY_MANAGER` | Add line item to DRAFT purchase order |
+| `PATCH` | `/api/v1/purchase-orders/:id/items/:itemId` | `ADMIN`, `INVENTORY_MANAGER` | Update quantity or unit cost of line item on DRAFT PO |
+| `DELETE` | `/api/v1/purchase-orders/:id/items/:itemId` | `ADMIN`, `INVENTORY_MANAGER` | Remove line item from DRAFT PO |
+| `POST` | `/api/v1/purchase-orders/:id/submit` | `ADMIN`, `INVENTORY_MANAGER` | Submit DRAFT PO (requires >= 1 item, transitions to `SUBMITTED`) |
+| `POST` | `/api/v1/purchase-orders/:id/cancel` | `ADMIN`, `INVENTORY_MANAGER` | Cancel PO from `DRAFT`, `SUBMITTED`, or `PARTIALLY_RECEIVED` |
+
+#### Key Business & Concurrency Rules:
+1. **PO Number Generation:** Auto-generated inside InnoDB transaction under row lock as `PO-YYYY-NNN` (e.g. `PO-2026-019`).
+2. **Transactional Line Totals:** Subtotals (`ROUND(quantity * unit_cost, 2)`) and PO `total_amount` (`SUM(subtotal)`) are updated transactionally.
+3. **Immutability After Submission:** Submitted POs reject line item additions, updates, and deletions.
+4. **Integration with Receipt API:** Submitted POs can be partially or fully received via `POST /api/v1/inventory/receipts`.
+5. **Safe Cancellation Lifecycle:** Fully received POs cannot be cancelled. Partially received POs transition to `CANCELLED` without altering or discarding already-received inventory batches, while blocking any future receipts.
+
+
 
 
 
