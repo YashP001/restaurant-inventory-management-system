@@ -140,3 +140,4 @@ describe('AuthContext and AuthProvider', () => {
     expect(screen.getByTestId('username')).toHaveTextContent('NO_USER');
   });
 });
+

@@ -79,3 +79,4 @@ describe('Modal Component', () => {
     expect(document.body.style.overflow).toBe('unset');
   });
 });
+

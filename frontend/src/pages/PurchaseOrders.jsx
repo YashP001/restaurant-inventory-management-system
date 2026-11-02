@@ -69,8 +69,26 @@ export default function PurchaseOrders() {
         supplierApi.getSuppliers(),
         catalogApi.getIngredients('?limit=100')
       ]);
-      setSuppliers(supRes.data || []);
-      setIngredients(ingRes.data || []);
+      const rawSuppliers = Array.isArray(supRes.data) ? supRes.data : (supRes.data?.suppliers || []);
+      const normalizedSuppliers = rawSuppliers.map(s => ({
+        ...s,
+        supplier_id: s.id ?? s.supplier_id,
+        supplier_name: s.name || s.supplier_name || 'Unnamed Supplier',
+        lead_time_days: s.lead_time_days ?? 1
+      }));
+      setSuppliers(normalizedSuppliers);
+
+      const rawIngredients = Array.isArray(ingRes.data) ? ingRes.data : (ingRes.data?.ingredients || []);
+      const normalizedIngredients = rawIngredients.map(ing => ({
+        ...ing,
+        ingredient_id: ing.id ?? ing.ingredient_id,
+        ingredient_name: ing.name || ing.ingredient_name || 'Ingredient',
+        unit_abbreviation: (typeof ing.unit_abbreviation === 'string' ? ing.unit_abbreviation : '') ||
+                           (ing.unit && typeof ing.unit === 'object' ? (ing.unit.abbreviation || ing.unit.name) : '') ||
+                           (typeof ing.unit === 'string' ? ing.unit : '') ||
+                           'units'
+      }));
+      setIngredients(normalizedIngredients);
     } catch (err) {
       console.error('Failed to load suppliers/ingredients for modal', err);
     }
@@ -528,11 +546,14 @@ export default function PurchaseOrders() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">-- Choose a Vendor --</option>
-                {suppliers.map(s => (
-                  <option key={s.supplier_id} value={s.supplier_id}>
-                    {s.supplier_name} (Lead time: {s.lead_time_days} days)
-                  </option>
-                ))}
+                {suppliers.map(s => {
+                  const sId = s.supplier_id || s.id;
+                  return (
+                    <option key={sId} value={sId}>
+                      {s.supplier_name || s.name} (Lead time: {s.lead_time_days ?? 1} days)
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>
@@ -593,11 +614,14 @@ export default function PurchaseOrders() {
                         className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-xs"
                       >
                         <option value="">Select ingredient</option>
-                        {ingredients.map(ing => (
-                          <option key={ing.ingredient_id} value={ing.ingredient_id}>
-                            {ing.ingredient_name} ({ing.unit_abbreviation})
-                          </option>
-                        ))}
+                        {ingredients.map(ing => {
+                          const ingId = ing.ingredient_id || ing.id;
+                          return (
+                            <option key={ingId} value={ingId}>
+                              {ing.ingredient_name || ing.name} ({ing.unit_abbreviation || 'units'})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                     <div className="w-28">

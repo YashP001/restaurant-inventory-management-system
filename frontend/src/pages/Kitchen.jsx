@@ -27,8 +27,18 @@ export default function Kitchen() {
   const fetchActiveOrders = async () => {
     try {
       const res = await ordersApi.getOrders('?limit=50');
-      // Filter out COMPLETED and CANCELLED unless recent
-      setOrders(res.data || []);
+      const rawList = Array.isArray(res.data) ? res.data : (res.data?.orders || []);
+      const normalized = rawList.map(o => ({
+        ...o,
+        order_id: o.id ?? o.order_id,
+        id: o.id ?? o.order_id,
+        items: (o.items || []).map(it => ({
+          ...it,
+          order_item_id: it.id ?? it.order_item_id,
+          item_name: it.menu_item_name || it.item_name || 'Item'
+        }))
+      }));
+      setOrders(normalized);
       setError(null);
     } catch (err) {
       console.error('Failed to load kitchen queue', err);
@@ -38,7 +48,17 @@ export default function Kitchen() {
     }
   };
 
+  const validateOrderId = (orderId, actionName) => {
+    if (!orderId || orderId === 'undefined') {
+      console.error(`Invalid order ID passed to ${actionName}:`, orderId);
+      alert(`Cannot ${actionName}: missing or undefined order ID.`);
+      return false;
+    }
+    return true;
+  };
+
   const handleConfirm = async (orderId) => {
+    if (!validateOrderId(orderId, 'confirm order')) return;
     setActionLoadingId(orderId);
     try {
       await ordersApi.confirmOrder(orderId);
@@ -51,6 +71,7 @@ export default function Kitchen() {
   };
 
   const handleMarkReady = async (orderId) => {
+    if (!validateOrderId(orderId, 'mark order ready')) return;
     setActionLoadingId(orderId);
     try {
       await ordersApi.markOrderReady(orderId);
@@ -63,6 +84,7 @@ export default function Kitchen() {
   };
 
   const handleDeliver = async (orderId) => {
+    if (!validateOrderId(orderId, 'deliver order')) return;
     setActionLoadingId(orderId);
     try {
       await ordersApi.deliverOrder(orderId);
@@ -75,6 +97,7 @@ export default function Kitchen() {
   };
 
   const handleComplete = async (orderId) => {
+    if (!validateOrderId(orderId, 'complete order')) return;
     setActionLoadingId(orderId);
     try {
       await ordersApi.completeOrder(orderId);
@@ -87,7 +110,8 @@ export default function Kitchen() {
   };
 
   const openCancelModal = (order) => {
-    setCancellingOrder(order);
+    const orderId = order.order_id || order.id;
+    setCancellingOrder({ ...order, order_id: orderId });
     setCancelForm({
       record_waste: order.status === 'PREPARING' || order.status === 'READY_FOR_PICKUP',
       waste_reason: 'CUSTOMER_RETURN',
@@ -99,9 +123,11 @@ export default function Kitchen() {
   const handleCancelSubmit = async (e) => {
     e.preventDefault();
     if (!cancellingOrder) return;
-    setActionLoadingId(cancellingOrder.order_id);
+    const orderId = cancellingOrder.order_id || cancellingOrder.id;
+    if (!validateOrderId(orderId, 'cancel order')) return;
+    setActionLoadingId(orderId);
     try {
-      await ordersApi.cancelOrder(cancellingOrder.order_id, cancelForm);
+      await ordersApi.cancelOrder(orderId, cancelForm);
       alert('Order cancelled successfully.');
       setCancelModalOpen(false);
       setCancellingOrder(null);
@@ -166,15 +192,18 @@ export default function Kitchen() {
               {pendingOrders.length === 0 ? (
                 <div className="text-center text-gray-400 text-xs py-8">No pending tickets</div>
               ) : (
-                pendingOrders.map(o => (
-                  <KitchenCard
-                    key={o.order_id}
-                    order={o}
-                    isProcessing={actionLoadingId === o.order_id}
-                    onConfirm={() => handleConfirm(o.order_id)}
-                    onCancel={() => openCancelModal(o)}
-                  />
-                ))
+                pendingOrders.map(o => {
+                  const orderId = o.order_id || o.id;
+                  return (
+                    <KitchenCard
+                      key={orderId || o.order_number}
+                      order={o}
+                      isProcessing={Boolean(actionLoadingId && actionLoadingId === orderId)}
+                      onConfirm={() => handleConfirm(orderId)}
+                      onCancel={() => openCancelModal(o)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
@@ -191,15 +220,18 @@ export default function Kitchen() {
               {preparingOrders.length === 0 ? (
                 <div className="text-center text-gray-400 text-xs py-8">No orders in preparation</div>
               ) : (
-                preparingOrders.map(o => (
-                  <KitchenCard
-                    key={o.order_id}
-                    order={o}
-                    isProcessing={actionLoadingId === o.order_id}
-                    onReady={() => handleMarkReady(o.order_id)}
-                    onCancel={() => openCancelModal(o)}
-                  />
-                ))
+                preparingOrders.map(o => {
+                  const orderId = o.order_id || o.id;
+                  return (
+                    <KitchenCard
+                      key={orderId || o.order_number}
+                      order={o}
+                      isProcessing={Boolean(actionLoadingId && actionLoadingId === orderId)}
+                      onReady={() => handleMarkReady(orderId)}
+                      onCancel={() => openCancelModal(o)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
@@ -216,16 +248,19 @@ export default function Kitchen() {
               {readyOrders.length === 0 ? (
                 <div className="text-center text-gray-400 text-xs py-8">No orders ready</div>
               ) : (
-                readyOrders.map(o => (
-                  <KitchenCard
-                    key={o.order_id}
-                    order={o}
-                    isProcessing={actionLoadingId === o.order_id}
-                    onDeliver={() => handleDeliver(o.order_id)}
-                    onComplete={() => handleComplete(o.order_id)}
-                    onCancel={() => openCancelModal(o)}
-                  />
-                ))
+                readyOrders.map(o => {
+                  const orderId = o.order_id || o.id;
+                  return (
+                    <KitchenCard
+                      key={orderId || o.order_number}
+                      order={o}
+                      isProcessing={Boolean(actionLoadingId && actionLoadingId === orderId)}
+                      onDeliver={() => handleDeliver(orderId)}
+                      onComplete={() => handleComplete(orderId)}
+                      onCancel={() => openCancelModal(o)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
@@ -242,14 +277,17 @@ export default function Kitchen() {
               {deliveredOrders.length === 0 ? (
                 <div className="text-center text-gray-400 text-xs py-8">No active delivery tickets</div>
               ) : (
-                deliveredOrders.map(o => (
-                  <KitchenCard
-                    key={o.order_id}
-                    order={o}
-                    isProcessing={actionLoadingId === o.order_id}
-                    onComplete={() => handleComplete(o.order_id)}
-                  />
-                ))
+                deliveredOrders.map(o => {
+                  const orderId = o.order_id || o.id;
+                  return (
+                    <KitchenCard
+                      key={orderId || o.order_number}
+                      order={o}
+                      isProcessing={Boolean(actionLoadingId && actionLoadingId === orderId)}
+                      onComplete={() => handleComplete(orderId)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
@@ -345,7 +383,7 @@ function KitchenCard({ order, isProcessing, onConfirm, onReady, onDeliver, onCom
         <div>
           <span className="font-bold text-sm text-gray-900 block">{order.order_number}</span>
           <span className="text-2xs font-semibold text-primary-600 uppercase">
-            {order.order_type} {order.table_id ? `• Table ${order.table_id}` : ''}
+            {order.order_type} {(order.table?.table_number || order.table_id) ? `• Table ${order.table?.table_number || order.table_id}` : ''}
           </span>
         </div>
         <div className="text-right">
@@ -359,17 +397,20 @@ function KitchenCard({ order, isProcessing, onConfirm, onReady, onDeliver, onCom
 
       {/* Items list */}
       <div className="space-y-1.5 text-xs">
-        {(order.items || []).map((it, idx) => (
-          <div key={idx} className="flex justify-between items-start">
-            <div>
-              <span className="font-bold text-gray-900 mr-1.5">{it.quantity}x</span>
-              <span className="text-gray-800">{it.item_name}</span>
-              {it.special_instructions && (
-                <p className="text-2xs text-red-500 font-medium italic mt-0.5">⚠️ {it.special_instructions}</p>
-              )}
+        {(order.items || []).map((it, idx) => {
+          const itemKey = it.order_item_id || it.id || `${order.order_id || order.id || 'ord'}-item-${idx}`;
+          return (
+            <div key={itemKey} className="flex justify-between items-start">
+              <div>
+                <span className="font-bold text-gray-900 mr-1.5">{it.quantity}x</span>
+                <span className="text-gray-800">{it.menu_item_name || it.item_name}</span>
+                {it.special_instructions && (
+                  <p className="text-2xs text-red-500 font-medium italic mt-0.5">⚠️ {it.special_instructions}</p>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {order.notes && (

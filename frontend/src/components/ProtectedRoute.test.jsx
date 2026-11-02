@@ -115,3 +115,4 @@ describe('ProtectedRoute Component', () => {
     expect(screen.getByText('All Staff Visible Content')).toBeInTheDocument();
   });
 });
+

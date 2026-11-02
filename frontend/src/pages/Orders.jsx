@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ordersApi, catalogApi } from '../services/api';
 import Badge from '../components/Badge';
+import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 
 export default function Orders() {
+  const { hasRole } = useAuth();
+  const canRecordPayment = hasRole('ADMIN', 'CASHIER');
   const [activeTab, setActiveTab] = useState('pos'); // 'pos' or 'history'
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -182,6 +185,10 @@ export default function Orders() {
   };
 
   const handleOpenPayment = (order) => {
+    if (!canRecordPayment) {
+      alert('Access Restricted: Only Cashiers and Administrators are authorized to record payments.');
+      return;
+    }
     const ord = order ? { ...order, order_id: order.id || order.order_id } : null;
     setSelectedOrder(ord);
     const remaining = Math.max(0, parseFloat(order.total_amount || 0) - parseFloat(order.total_paid || 0));
@@ -195,6 +202,10 @@ export default function Orders() {
 
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
+    if (!canRecordPayment) {
+      alert('Access Restricted: Only Cashiers and Administrators are authorized to record payments.');
+      return;
+    }
     setSubmittingPayment(true);
     try {
       const orderId = selectedOrder.order_id || selectedOrder.id;
@@ -530,7 +541,7 @@ export default function Orders() {
                           >
                             Details
                           </button>
-                          {parseFloat(o.total_paid || 0) < parseFloat(o.total_amount || 0) && o.status !== 'CANCELLED' && (
+                          {canRecordPayment && parseFloat(o.total_paid || 0) < parseFloat(o.total_amount || 0) && o.status !== 'CANCELLED' && (
                             <button
                               onClick={() => handleOpenPayment(o)}
                               className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2.5 py-1 rounded font-medium"
@@ -597,7 +608,7 @@ export default function Orders() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {(selectedOrder.items || []).map((it, idx) => (
-                      <tr key={idx}>
+                      <tr key={it.order_item_id || it.id || `${selectedOrder.order_id || selectedOrder.id || 'ord'}-item-${idx}`}>
                         <td className="px-3 py-2">
                           <span className="font-medium text-gray-900">{it.item_name}</span>
                           {it.special_instructions && (
@@ -636,7 +647,7 @@ export default function Orders() {
                 <h4 className="text-xs font-bold text-gray-900 uppercase mb-2">Recorded Payments</h4>
                 <div className="space-y-1">
                   {selectedOrder.payments.map((p, idx) => (
-                    <div key={idx} className="bg-green-50 text-green-900 p-2 rounded text-xs flex justify-between">
+                    <div key={p.id || p.payment_id || `pmt-${idx}`} className="bg-green-50 text-green-900 p-2 rounded text-xs flex justify-between">
                       <span>Method: <strong>{p.payment_method}</strong> ({p.transaction_reference || 'Ref: Cash'})</span>
                       <span className="font-bold">₹{parseFloat(p.amount_paid).toFixed(2)}</span>
                     </div>
@@ -654,7 +665,7 @@ export default function Orders() {
                   Confirm & Deduct Stock (FEFO)
                 </button>
               )}
-              {parseFloat(selectedOrder.total_paid || 0) < parseFloat(selectedOrder.total_amount || 0) && selectedOrder.status !== 'CANCELLED' && (
+              {canRecordPayment && parseFloat(selectedOrder.total_paid || 0) < parseFloat(selectedOrder.total_amount || 0) && selectedOrder.status !== 'CANCELLED' && (
                 <button
                   onClick={() => { setIsDetailsOpen(false); handleOpenPayment(selectedOrder); }}
                   className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold"

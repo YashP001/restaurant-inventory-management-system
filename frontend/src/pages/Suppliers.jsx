@@ -21,7 +21,17 @@ export default function Suppliers() {
     setError(null);
     try {
       const res = await supplierApi.getSuppliers();
-      setSuppliers(res.data || []);
+      const rawList = Array.isArray(res.data) ? res.data : (res.data?.suppliers || []);
+      const normalized = rawList.map(s => ({
+        ...s,
+        supplier_id: s.id ?? s.supplier_id,
+        supplier_name: (s.name || s.supplier_name || '').trim() || 'Unnamed Supplier',
+        contact_name: (s.contact_person || s.contact_name || '').trim(),
+        city: (s.address || s.city || '').trim(),
+        lead_time_days: s.lead_time_days ?? 1,
+        is_active: s.is_active ?? true
+      }));
+      setSuppliers(normalized);
     } catch (err) {
       setError(err.message || 'Failed to load suppliers');
     } finally {
@@ -30,10 +40,15 @@ export default function Suppliers() {
   };
 
   const handleViewSupplier = async (supplier) => {
+    const supplierId = supplier?.supplier_id ?? supplier?.id;
+    if (!supplierId || supplierId === 'undefined') {
+      alert('Cannot view supplier details: missing supplier ID.');
+      return;
+    }
     setSelectedSupplier(supplier);
     setDetailsLoading(true);
     try {
-      const res = await supplierApi.getSupplierById(supplier.supplier_id);
+      const res = await supplierApi.getSupplierById(supplierId);
       setSupplierDetails(res.data);
     } catch (err) {
       alert(err.message || 'Failed to load supplier details');
@@ -43,11 +58,16 @@ export default function Suppliers() {
     }
   };
 
-  const filtered = suppliers.filter(s =>
-    s.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.contact_name && s.contact_name.toLowerCase().includes(search.toLowerCase())) ||
-    (s.city && s.city.toLowerCase().includes(search.toLowerCase()))
-  );
+  const searchTerm = (search || '').toLowerCase().trim();
+  const filtered = suppliers.filter(s => {
+    if (!searchTerm) return true;
+    const sName = (s.supplier_name || s.name || '').toLowerCase();
+    const cName = (s.contact_name || s.contact_person || '').toLowerCase();
+    const loc = (s.city || s.address || '').toLowerCase();
+    const phone = (s.phone || '').toLowerCase();
+    const email = (s.email || '').toLowerCase();
+    return sName.includes(searchTerm) || cName.includes(searchTerm) || loc.includes(searchTerm) || phone.includes(searchTerm) || email.includes(searchTerm);
+  });
 
   return (
     <div className="space-y-6">
@@ -115,7 +135,7 @@ export default function Suppliers() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((s) => (
-                  <tr key={s.supplier_id} className="hover:bg-gray-50 transition">
+                  <tr key={s.supplier_id || s.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 font-medium text-gray-900">
                       {s.supplier_name}
                     </td>
@@ -124,7 +144,7 @@ export default function Suppliers() {
                       <div className="text-xs text-gray-900">{s.phone || '—'}</div>
                       <div className="text-xs text-gray-500">{s.email || '—'}</div>
                     </td>
-                    <td className="px-6 py-4 text-xs">{s.city ? `${s.city}, ${s.state || ''}` : '—'}</td>
+                    <td className="px-6 py-4 text-xs">{s.city ? `${s.city}${s.state ? `, ${s.state}` : ''}` : '—'}</td>
                     <td className="px-6 py-4">
                       <span className="font-medium text-gray-900">{s.lead_time_days || 1}</span> days
                     </td>
@@ -167,7 +187,7 @@ export default function Suppliers() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg text-sm">
                 <div>
                   <span className="text-xs text-gray-500 block">Contact</span>
-                  <span className="font-medium text-gray-900">{supplierDetails.contact_name || '—'}</span>
+                  <span className="font-medium text-gray-900">{supplierDetails.contact_name || supplierDetails.contact_person || '—'}</span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Phone</span>
@@ -179,7 +199,7 @@ export default function Suppliers() {
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Lead Time</span>
-                  <span className="font-medium text-gray-900">{supplierDetails.lead_time_days} days</span>
+                  <span className="font-medium text-gray-900">{supplierDetails.lead_time_days ?? 1} days</span>
                 </div>
               </div>
 
@@ -203,10 +223,10 @@ export default function Suppliers() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {supplierDetails.ingredients.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 font-medium text-gray-900">{item.ingredient_name}</td>
+                          <tr key={item.ingredient_id || item.id || idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-2.5 font-medium text-gray-900">{item.ingredient_name || item.name}</td>
                             <td className="px-4 py-2.5">{item.category_name || '—'}</td>
-                            <td className="px-4 py-2.5">{item.unit_abbreviation || item.unit_name || 'units'}</td>
+                            <td className="px-4 py-2.5">{item.unit_abbreviation || item.unit || item.unit_name || 'units'}</td>
                             <td className="px-4 py-2.5 font-semibold text-gray-900">₹{parseFloat(item.unit_cost || 0).toFixed(2)}</td>
                             <td className="px-4 py-2.5">{item.minimum_order_quantity || 1}</td>
                             <td className="px-4 py-2.5">

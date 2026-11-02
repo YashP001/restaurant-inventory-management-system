@@ -110,3 +110,4 @@ describe('Login Page Component', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
+
