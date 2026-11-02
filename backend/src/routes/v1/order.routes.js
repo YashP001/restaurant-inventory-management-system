@@ -10,7 +10,8 @@ import {
   orderIdParamSchema,
   addOrderItemSchema,
   updateOrderItemSchema,
-  orderItemParamSchema
+  orderItemParamSchema,
+  cancelOrderSchema
 } from '../../validations/order.validation.js';
 import { createPaymentSchema } from '../../validations/payment.validation.js';
 
@@ -104,8 +105,32 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/orders/:id/ready
+ * @desc    Advance order status from PREPARING to READY_FOR_PICKUP
+ * @access  Private (ADMIN, CHEF)
+ */
+router.post(
+  '/:id/ready',
+  requireRole(ROLES.ADMIN, ROLES.CHEF),
+  validate(orderIdParamSchema),
+  OrderController.markOrderReady
+);
+
+/**
+ * @route   POST /api/v1/orders/:id/deliver
+ * @desc    Advance order status from READY_FOR_PICKUP to DELIVERED (ONLINE orders)
+ * @access  Private (ADMIN, CASHIER)
+ */
+router.post(
+  '/:id/deliver',
+  requireRole(ROLES.ADMIN, ROLES.CASHIER),
+  validate(orderIdParamSchema),
+  OrderController.deliverOrder
+);
+
+/**
  * @route   POST /api/v1/orders/:id/complete
- * @desc    Complete an order from PREPARING status
+ * @desc    Complete an order from READY_FOR_PICKUP / DELIVERED / PREPARING status
  * @access  Private (ADMIN, CHEF, CASHIER)
  */
 router.post(
@@ -117,13 +142,13 @@ router.post(
 
 /**
  * @route   POST /api/v1/orders/:id/cancel
- * @desc    Cancel a customer order
- * @access  Private (ADMIN, CASHIER)
+ * @desc    Cancel a customer order (supports optional waste recording)
+ * @access  Private (ADMIN, CASHIER, CHEF)
  */
 router.post(
   '/:id/cancel',
-  requireRole(ROLES.ADMIN, ROLES.CASHIER),
-  validate(orderIdParamSchema),
+  requireRole(ROLES.ADMIN, ROLES.CASHIER, ROLES.CHEF),
+  validate(cancelOrderSchema),
   OrderController.cancelOrder
 );
 

@@ -122,8 +122,38 @@ export const OrderController = {
   },
 
   /**
+   * @route   POST /api/v1/orders/:id/ready
+   * @desc    Advance order status from PREPARING to READY_FOR_PICKUP
+   * @access  Private (ADMIN, CHEF)
+   */
+  async markOrderReady(req, res, next) {
+    try {
+      const { id } = req.params;
+      const order = await OrderService.markOrderReady(id, req.user, req.id);
+      return ApiResponse.ok(res, order, 'Order marked as ready for pickup');
+    } catch (error) {
+      return next(error);
+    }
+  },
+
+  /**
+   * @route   POST /api/v1/orders/:id/deliver
+   * @desc    Advance order status from READY_FOR_PICKUP to DELIVERED (ONLINE orders)
+   * @access  Private (ADMIN, CASHIER)
+   */
+  async deliverOrder(req, res, next) {
+    try {
+      const { id } = req.params;
+      const order = await OrderService.deliverOrder(id, req.user, req.id);
+      return ApiResponse.ok(res, order, 'Order marked as delivered');
+    } catch (error) {
+      return next(error);
+    }
+  },
+
+  /**
    * @route   POST /api/v1/orders/:id/complete
-   * @desc    Complete a customer order from PREPARING status
+   * @desc    Complete a customer order
    * @access  Private (ADMIN, CHEF, CASHIER)
    */
   async completeOrder(req, res, next) {
@@ -138,13 +168,13 @@ export const OrderController = {
 
   /**
    * @route   POST /api/v1/orders/:id/cancel
-   * @desc    Cancel a customer order
-   * @access  Private (ADMIN, CASHIER)
+   * @desc    Cancel a customer order (with optional waste recording for prepared items)
+   * @access  Private (ADMIN, CASHIER, CHEF)
    */
   async cancelOrder(req, res, next) {
     try {
       const { id } = req.params;
-      const order = await OrderService.cancelOrder(id, req.user, req.id);
+      const order = await OrderService.cancelOrder(id, req.user, req.body || {}, req.id);
       return ApiResponse.ok(res, order, 'Order cancelled successfully');
     } catch (error) {
       return next(error);

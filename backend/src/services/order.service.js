@@ -448,8 +448,142 @@ export const OrderService = {
   },
 
   /**
-   * Completes a customer order from PREPARING status
-   * Ensures stock is NOT deducted again and frees dining table if occupied
+   * Advances order status from PREPARING to READY_FOR_PICKUP
+   * Authorized for CHEF and ADMIN roles
+   */
+  async markOrderReady(orderId, actingUser, requestId = null) {
+    const pool = getMySQLPool();
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      // 1. Lock order
+      const order = await OrderModel.findOrderWithLock(orderId, connection);
+      if (!order) {
+        throw ApiError.notFound(`Order with ID ${orderId} not found`, 'ORDER_NOT_FOUND');
+      }
+
+      // 2. Validate current status
+      if (order.status === 'READY_FOR_PICKUP') {
+        throw ApiError.badRequest(`Order '${order.order_number}' is already marked as ready for pickup`, 'ORDER_ALREADY_READY');
+      }
+      if (order.status !== 'PREPARING') {
+        throw ApiError.badRequest(
+          `Cannot mark order '${order.order_number}' as ready from '${order.status}' status. Only orders in PREPARING status can be marked ready.`,
+          'INVALID_STATUS_TRANSITION'
+        );
+      }
+
+      // 3. Update status to READY_FOR_PICKUP (does NOT deduct inventory again)
+      await OrderModel.updateOrderStatus(order.id, 'READY_FOR_PICKUP', null, connection);
+
+      await connection.commit();
+
+      // Audit Log
+      await AuditLog.record({
+        userId: actingUser.id,
+        username: actingUser.username,
+        action: 'ORDER_MARKED_READY',
+        resourceType: 'ORDER',
+        resourceId: String(order.id),
+        requestId,
+        metadata: {
+          orderId: order.id,
+          orderNumber: order.order_number,
+          orderType: order.order_type,
+          newStatus: 'READY_FOR_PICKUP'
+        }
+      });
+
+      return await this.getOrderById(order.id);
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  },
+
+  /**
+   * Advances order status from READY_FOR_PICKUP to DELIVERED
+   * Only permitted for appropriate order types (ONLINE deliveries)
+   * Authorized for CASHIER and ADMIN roles
+   */
+  async deliverOrder(orderId, actingUser, requestId = null) {
+    const pool = getMySQLPool();
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      // 1. Lock order
+      const order = await OrderModel.findOrderWithLock(orderId, connection);
+      if (!order) {
+        throw ApiError.notFound(`Order with ID ${orderId} not found`, 'ORDER_NOT_FOUND');
+      }
+
+      // 2. Order type validation: DINE_IN and TAKEAWAY do not undergo dispatch delivery
+      if (order.order_type === 'DINE_IN') {
+        throw ApiError.badRequest(
+          `DINE_IN orders do not undergo delivery dispatch; they are served at the table and complete directly from READY_FOR_PICKUP status upon bill settlement.`,
+          'ORDER_TYPE_NOT_DELIVERABLE'
+        );
+      }
+      if (order.order_type === 'TAKEAWAY') {
+        throw ApiError.badRequest(
+          `TAKEAWAY orders are collected by customers at the counter and complete directly from READY_FOR_PICKUP status upon pickup.`,
+          'ORDER_TYPE_NOT_DELIVERABLE'
+        );
+      }
+
+      // 3. Validate status
+      if (order.status === 'DELIVERED') {
+        throw ApiError.badRequest(`Order '${order.order_number}' is already marked as delivered`, 'ORDER_ALREADY_DELIVERED');
+      }
+      if (order.status !== 'READY_FOR_PICKUP') {
+        throw ApiError.badRequest(
+          `Cannot mark order '${order.order_number}' as delivered from '${order.status}' status. Only orders in READY_FOR_PICKUP status can be delivered.`,
+          'INVALID_STATUS_TRANSITION'
+        );
+      }
+
+      // 4. Update status to DELIVERED (does NOT deduct inventory again)
+      await OrderModel.updateOrderStatus(order.id, 'DELIVERED', null, connection);
+
+      await connection.commit();
+
+      // Audit Log
+      await AuditLog.record({
+        userId: actingUser.id,
+        username: actingUser.username,
+        action: 'ORDER_DELIVERED',
+        resourceType: 'ORDER',
+        resourceId: String(order.id),
+        requestId,
+        metadata: {
+          orderId: order.id,
+          orderNumber: order.order_number,
+          orderType: order.order_type,
+          newStatus: 'DELIVERED'
+        }
+      });
+
+      return await this.getOrderById(order.id);
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  },
+
+  /**
+   * Completes a customer order
+   * - DINE_IN: from READY_FOR_PICKUP (or PREPARING) -> frees dining table
+   * - TAKEAWAY: from READY_FOR_PICKUP (or PREPARING)
+   * - ONLINE: from DELIVERED (or READY_FOR_PICKUP/PREPARING)
+   * Records completed_at and ensures stock is NOT deducted again
    */
   async completeOrder(orderId, actingUser, requestId = null) {
     const pool = getMySQLPool();
@@ -468,18 +602,30 @@ export const OrderService = {
       if (order.status === 'COMPLETED') {
         throw ApiError.badRequest(`Order '${order.order_number}' is already completed`, 'ORDER_ALREADY_COMPLETED');
       }
-      if (order.status !== 'PREPARING') {
+      if (order.status === 'CANCELLED') {
+        throw ApiError.badRequest(`Cannot complete cancelled order '${order.order_number}'`, 'ORDER_ALREADY_CANCELLED');
+      }
+      if (order.status === 'PENDING' || order.status === 'CONFIRMED') {
         throw ApiError.badRequest(
-          `Cannot complete order '${order.order_number}' in '${order.status}' status. Only orders in PREPARING status can be completed.`,
+          `Cannot complete order '${order.order_number}' in '${order.status}' status. Order must be prepared before completion.`,
           'ORDER_CANNOT_BE_COMPLETED'
         );
       }
 
-      // 3. Advance status to COMPLETED
+      // 3. Status eligibility for completion: PREPARING, READY_FOR_PICKUP, DELIVERED
+      const eligibleStatuses = ['PREPARING', 'READY_FOR_PICKUP', 'DELIVERED'];
+      if (!eligibleStatuses.includes(order.status)) {
+        throw ApiError.badRequest(
+          `Cannot complete order '${order.order_number}' in '${order.status}' status.`,
+          'ORDER_CANNOT_BE_COMPLETED'
+        );
+      }
+
+      // 4. Advance status to COMPLETED
       const completedAt = new Date();
       await OrderModel.updateOrderStatus(order.id, 'COMPLETED', completedAt, connection);
 
-      // 4. Free dining table if occupied by this order
+      // 5. Free dining table if occupied by this order
       if (order.table_id) {
         await OrderModel.updateTableStatus(order.table_id, 'VACANT', connection);
       }
@@ -497,6 +643,8 @@ export const OrderService = {
         metadata: {
           orderId: order.id,
           orderNumber: order.order_number,
+          orderType: order.order_type,
+          previousStatus: order.status,
           completedAt
         }
       });
@@ -512,8 +660,11 @@ export const OrderService = {
 
   /**
    * Cancels a customer order with safe ledger preservation rules
+   * If order is in PREPARING or READY_FOR_PICKUP, preserves ingredient consumption records.
+   * If record_waste is true, records food waste entries in waste_records for the prepared menu items.
    */
-  async cancelOrder(orderId, actingUser, requestId = null) {
+  async cancelOrder(orderId, actingUser, options = {}, requestId = null) {
+    const { record_waste = false, waste_reason = 'CUSTOMER_RETURN', notes: wasteNotes = null } = options;
     const pool = getMySQLPool();
     const connection = await pool.getConnection();
 
@@ -537,14 +688,56 @@ export const OrderService = {
       const previousStatus = order.status;
 
       // 3. Transition status to CANCELLED
-      // Note: If order was in 'PREPARING', ingredients were already physically consumed by FEFO.
+      // Note: If order was in 'PREPARING' or 'READY_FOR_PICKUP', ingredients were already physically consumed by FEFO.
       // In accordance with restaurant inventory standards and database ledger integrity,
-      // order_ingredient_consumptions and stock_movements remain intact.
+      // order_ingredient_consumptions and stock_movements remain intact (no unlogged raw reversals).
       await OrderModel.updateOrderStatus(order.id, 'CANCELLED', null, connection);
 
       // 4. Free dining table if attached
       if (order.table_id) {
         await OrderModel.updateTableStatus(order.table_id, 'VACANT', connection);
+      }
+
+      // 5. Optional Prepared Dish Waste Recording
+      const recordedWaste = [];
+      if (record_waste && (previousStatus === 'PREPARING' || previousStatus === 'READY_FOR_PICKUP')) {
+        const items = await OrderModel.findOrderItems(order.id, connection);
+        
+        for (const item of items) {
+          // Calculate actual ingredient loss from FEFO consumptions
+          const [lossRows] = await connection.query(`
+            SELECT COALESCE(SUM(total_cost), 0) AS financial_loss
+            FROM \`order_ingredient_consumptions\`
+            WHERE order_item_id = ?;
+          `, [item.id]);
+
+          let itemLoss = Number(lossRows[0]?.financial_loss || 0);
+          if (itemLoss === 0) {
+            // Fallback estimation if consumptions had 0 recorded cost: 40% of selling price
+            itemLoss = Number((item.subtotal * 0.4).toFixed(2));
+          }
+
+          const wasteId = await OrderModel.createWasteRecord({
+            menu_item_id: item.menu_item_id,
+            quantity_wasted: item.quantity,
+            unit_id: 5, // Pieces / servings
+            waste_reason: waste_reason,
+            financial_loss: itemLoss,
+            logged_by_user_id: actingUser.id,
+            notes: wasteNotes 
+              ? `[${order.order_number}] ${wasteNotes}`
+              : `Waste from cancelled order ${order.order_number}: ${item.menu_item_name} (Qty: ${item.quantity})`
+          }, connection);
+
+          recordedWaste.push({
+            waste_id: wasteId,
+            menu_item_id: item.menu_item_id,
+            menu_item_name: item.menu_item_name,
+            quantity_wasted: item.quantity,
+            financial_loss: itemLoss,
+            waste_reason
+          });
+        }
       }
 
       await connection.commit();
@@ -560,11 +753,20 @@ export const OrderService = {
         metadata: {
           orderId: order.id,
           orderNumber: order.order_number,
-          previousStatus
+          previousStatus,
+          wasteRecorded: recordedWaste.length > 0,
+          wasteCount: recordedWaste.length
         }
       });
 
-      return await this.getOrderById(order.id);
+      const updatedOrder = await this.getOrderById(order.id);
+      if (recordedWaste.length > 0) {
+        return {
+          ...updatedOrder,
+          recorded_waste: recordedWaste
+        };
+      }
+      return updatedOrder;
     } catch (error) {
       await connection.rollback();
       throw error;

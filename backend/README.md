@@ -1266,6 +1266,70 @@ Both adjustment and waste endpoints adhere to strict ACID transaction protocols:
 6. **Safe Cancellation Lifecycle:** Cancelling an order in `PENDING` state requires no stock adjustment. Cancelling an order in `PREPARING` state preserves `order_ingredient_consumptions` and `stock_movements` ledger entries without silent unlogged reversals.
 7. **Overpayment & Duplicate Protection:** Transactional row locking (`FOR UPDATE`) on orders and payments prevents race conditions and strictly rejects payments exceeding the outstanding balance (`total_amount - SUM(amount_paid)`).
 
+---
+
+## 18. Kitchen Fulfilment & Order Status Management (Phase 2 — Task 6B)
+
+### 1. Kitchen Fulfilment Endpoints (`/api/v1/orders`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/orders/:id/ready` | `ADMIN`, `CHEF` | Advance status from `PREPARING` to `READY_FOR_PICKUP`. Validates current preparation state without double stock deduction. |
+| `POST` | `/api/v1/orders/:id/deliver` | `ADMIN`, `CASHIER` | Advance status from `READY_FOR_PICKUP` to `DELIVERED`. Strictly restricted to `ONLINE` orders. Rejects `DINE_IN` and `TAKEAWAY` orders. |
+| `POST` | `/api/v1/orders/:id/complete` | `ADMIN`, `CHEF`, `CASHIER` | Complete order from `READY_FOR_PICKUP` (dine-in/takeaway) or `DELIVERED` (online), records `completed_at`, and frees dining table to `VACANT`. |
+| `POST` | `/api/v1/orders/:id/cancel` | `ADMIN`, `CASHIER`, `CHEF` | Cancel order with optional prepared food waste recording in `waste_records` (`record_waste: true`), preserving ingredient consumption history. |
+
+### 2. Status Transition Matrix by Order Type
+
+```
+                      [Order Created]
+                             │
+                             ▼
+                        ┌─────────┐
+                        │ PENDING │
+                        └────┬────┘
+                             │ POST /orders/:id/confirm (sp_process_order_fefo)
+                             ▼
+                       ┌───────────┐
+                       │ PREPARING │
+                       └─────┬─────┘
+                             │ POST /orders/:id/ready
+                             ▼
+                   ┌──────────────────┐
+                   │ READY_FOR_PICKUP │
+                   └───────┬──┬───────┘
+          ┌────────────────┘  └────────────────┐
+          │ (DINE_IN / TAKEAWAY)               │ (ONLINE only)
+          │ POST /complete                     │ POST /deliver
+          ▼                                    ▼
+    ┌───────────┐                        ┌───────────┐
+    │ COMPLETED │                        │ DELIVERED │
+    └───────────┘                        └─────┬─────┘
+                                               │ POST /complete
+                                               ▼
+                                         ┌───────────┐
+                                         │ COMPLETED │
+                                         └───────────┘
+```
+
+### 3. Food Waste Integration for Cancelled Dishes
+When an order is cancelled during preparation (`PREPARING` or `READY_FOR_PICKUP`), raw ingredients have already been consumed into the meal. Calling `POST /api/v1/orders/:id/cancel` with:
+```json
+{
+  "record_waste": true,
+  "waste_reason": "CUSTOMER_RETURN",
+  "notes": "Customer cancelled after baking started"
+}
+```
+automatically generates audit records in `waste_records`:
+- `menu_item_id`: Target prepared menu item.
+- `quantity_wasted`: Quantity from order line item.
+- `unit_id`: `5` (Piece / Serving).
+- `waste_reason`: `CUSTOMER_RETURN`, `PREPARATION_SCRAP`, or `OVERCOOKED`.
+- `financial_loss`: Accurately calculated from the sum of `total_cost` in `order_ingredient_consumptions`.
+- `notes`: Formatted with order number reference `[UB-ORD-XXXX]`.
+- **Integrity Guarantee:** Raw ingredient batches are NEVER artificially restored to active stock, maintaining full ledger traceability.
+
 
 
 

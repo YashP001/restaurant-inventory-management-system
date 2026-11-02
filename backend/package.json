@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node tests/core_infrastructure.test.js && node tests/auth_staff.test.js && node tests/master_catalog.test.js && node tests/menu_item.test.js && node tests/recipe.test.js && node tests/inventory.test.js && node tests/receipt.test.js && node tests/adjustment_waste.test.js && node tests/supplier_po.test.js && node tests/order_sales.test.js",
+    "test": "node tests/core_infrastructure.test.js && node tests/auth_staff.test.js && node tests/master_catalog.test.js && node tests/menu_item.test.js && node tests/recipe.test.js && node tests/inventory.test.js && node tests/receipt.test.js && node tests/adjustment_waste.test.js && node tests/supplier_po.test.js && node tests/order_sales.test.js && node tests/order_fulfilment.test.js",
     "test:infra": "node tests/core_infrastructure.test.js",
     "test:auth": "node tests/auth_staff.test.js",
     "test:catalog": "node tests/master_catalog.test.js",
@@ -17,7 +17,8 @@
     "test:receipt": "node tests/receipt.test.js",
     "test:adjustment-waste": "node tests/adjustment_waste.test.js",
     "test:supplier-po": "node tests/supplier_po.test.js",
-    "test:order": "node tests/order_sales.test.js"
+    "test:order": "node tests/order_sales.test.js",
+    "test:fulfilment": "node tests/order_fulfilment.test.js"
   },
   "keywords": [
     "inventory",

@@ -599,6 +599,41 @@ export const OrderModel = {
       limit,
       totalPages: Math.ceil(total / limit)
     };
+  },
+
+  /**
+   * Records prepared menu-item food waste in waste_records
+   */
+  async createWasteRecord({
+    menu_item_id,
+    quantity_wasted,
+    unit_id = 5,
+    waste_reason = 'CUSTOMER_RETURN',
+    financial_loss,
+    logged_by_user_id = null,
+    notes = null
+  }, connection) {
+    const sql = `
+      INSERT INTO \`waste_records\` (
+        menu_item_id,
+        quantity_wasted,
+        unit_id,
+        waste_reason,
+        financial_loss,
+        logged_by_user_id,
+        notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?);
+    `;
+    const [result] = await connection.query(sql, [
+      menu_item_id,
+      quantity_wasted,
+      unit_id,
+      waste_reason,
+      financial_loss,
+      logged_by_user_id,
+      notes
+    ]);
+    return result.insertId;
   }
 };
 
