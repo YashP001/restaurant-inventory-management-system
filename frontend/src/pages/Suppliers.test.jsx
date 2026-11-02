@@ -145,3 +145,4 @@ describe('Suppliers Page Component Regression Suite', () => {
     });
   });
 });
+

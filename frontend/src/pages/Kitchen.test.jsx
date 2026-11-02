@@ -129,3 +129,4 @@ describe('Kitchen KDS Page Component Regression Suite', () => {
     expect(screen.getByRole('button', { name: /Confirm \(FEFO\)/i })).toBeInTheDocument();
   });
 });
+
