@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
+import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
-export function DashboardLayout({ children, onRefresh, loading, lastUpdated }) {
+export function DashboardLayout({ children, onRefresh, loading }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
+    <div className="min-h-screen flex bg-slate-50 text-slate-800 font-sans">
       <Sidebar 
         isOpen={sidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
@@ -17,11 +18,10 @@ export function DashboardLayout({ children, onRefresh, loading, lastUpdated }) {
           onMenuClick={() => setSidebarOpen(true)} 
           onRefresh={onRefresh}
           loading={loading}
-          lastUpdated={lastUpdated}
         />
         
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {children}
+          {children || <Outlet />}
         </main>
       </div>
     </div>
