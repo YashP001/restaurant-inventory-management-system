@@ -61,24 +61,37 @@ export function Inventory() {
       ]);
 
       if (stockRes.status === 'fulfilled' && stockRes.value?.success) {
-        setStockList(stockRes.value.data?.stock || []);
+        const rawStock = Array.isArray(stockRes.value.data) ? stockRes.value.data : (stockRes.value.data?.stock || []);
+        setStockList(rawStock.map(item => ({
+          ...item,
+          ingredient_name: item.name || item.ingredient_name || '',
+          unit_abbreviation: item.unit?.abbreviation || item.unit_abbreviation || '',
+          cost_per_unit: item.reference_cost_per_unit ?? item.cost_per_unit ?? 0
+        })));
       }
       if (batchRes.status === 'fulfilled' && batchRes.value?.success) {
-        setBatchesList(batchRes.value.data?.batches || []);
+        const rawBatches = Array.isArray(batchRes.value.data) ? batchRes.value.data : (batchRes.value.data?.batches || []);
+        setBatchesList(rawBatches);
       }
       if (expRes.status === 'fulfilled' && expRes.value?.success) {
-        const active = expRes.value.data?.batches || [];
-        // Sort by expiry_date ASC
-        setExpiringList(active.sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)));
+        const rawExp = Array.isArray(expRes.value.data) ? expRes.value.data : (expRes.value.data?.batches || []);
+        setExpiringList([...rawExp].sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)));
       }
       if (movRes.status === 'fulfilled' && movRes.value?.success) {
-        setMovementsList(movRes.value.data?.movements || []);
+        const rawMov = Array.isArray(movRes.value.data) ? movRes.value.data : (movRes.value.data?.movements || []);
+        setMovementsList(rawMov.map(m => ({
+          ...m,
+          batch_number: m.batch?.batch_number || m.batch_number,
+          ingredient_name: m.ingredient?.name || m.ingredient_name
+        })));
       }
       if (ingRes.status === 'fulfilled' && ingRes.value?.success) {
-        setIngredients(ingRes.value.data?.ingredients || []);
+        const rawIng = Array.isArray(ingRes.value.data) ? ingRes.value.data : (ingRes.value.data?.ingredients || []);
+        setIngredients(rawIng);
       }
       if (supRes.status === 'fulfilled' && supRes.value?.success) {
-        setSuppliers(supRes.value.data?.suppliers || []);
+        const rawSup = Array.isArray(supRes.value.data) ? supRes.value.data : (supRes.value.data?.suppliers || []);
+        setSuppliers(rawSup);
       }
     } catch (err) {
       setError(err.message || 'Failed to load inventory data');
@@ -146,7 +159,8 @@ export function Inventory() {
 
   // Filtered Stock Items
   const filteredStock = stockList.filter(item => {
-    const matchesSearch = !search || item.ingredient_name.toLowerCase().includes(search.toLowerCase());
+    const name = item.ingredient_name || item.name || '';
+    const matchesSearch = !search || name.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = !statusFilter || item.stock_status === statusFilter;
     return matchesSearch && matchesStatus;
   });

@@ -49,7 +49,13 @@ export default function PurchaseOrders() {
     try {
       const query = statusFilter ? `?status=${statusFilter}` : '';
       const res = await supplierApi.getPurchaseOrders(query);
-      setOrders(res.data || []);
+      const list = res.data || [];
+      const normalized = list.map(po => ({
+        ...po,
+        purchase_order_id: po.purchase_order_id || po.id,
+        supplier_name: po.supplier_name || po.supplier?.name || '—'
+      }));
+      setOrders(normalized);
     } catch (err) {
       setError(err.message || 'Failed to fetch purchase orders');
     } finally {
@@ -72,8 +78,12 @@ export default function PurchaseOrders() {
 
   const handleViewPO = async (po) => {
     try {
-      const res = await supplierApi.getPurchaseOrderById(po.purchase_order_id);
-      setSelectedPO(res.data);
+      const id = po.purchase_order_id || po.id;
+      const res = await supplierApi.getPurchaseOrderById(id);
+      setSelectedPO({
+        ...res.data,
+        purchase_order_id: res.data.purchase_order_id || res.data.id
+      });
       setIsDetailsOpen(true);
     } catch (err) {
       alert(err.message || 'Failed to fetch PO details');
@@ -112,8 +122,12 @@ export default function PurchaseOrders() {
   // Open Receive Inward Stock modal prefilled with PO items
   const handleOpenReceive = async (po) => {
     try {
-      const res = await supplierApi.getPurchaseOrderById(po.purchase_order_id);
-      const poData = res.data;
+      const id = po.purchase_order_id || po.id;
+      const res = await supplierApi.getPurchaseOrderById(id);
+      const poData = {
+        ...res.data,
+        purchase_order_id: res.data.purchase_order_id || res.data.id
+      };
       setSelectedPO(poData);
 
       // Pre-fill items with remaining unreceived quantities

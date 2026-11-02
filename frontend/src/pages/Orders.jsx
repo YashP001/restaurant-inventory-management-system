@@ -47,8 +47,19 @@ export default function Orders() {
         catalogApi.getMenuItems('?is_available=true&limit=100'),
         catalogApi.getCategories()
       ]);
-      setMenuItems(menuRes.data || []);
-      setCategories(catRes.data || []);
+      const raw = menuRes.data || [];
+      setMenuItems(raw.map(item => ({
+        ...item,
+        menu_item_id: item.id || item.menu_item_id,
+        item_name: item.name || item.item_name || '',
+        price: Number(item.selling_price ?? item.price ?? 0)
+      })));
+      const rawCats = catRes.data || [];
+      setCategories(rawCats.map(c => ({
+        ...c,
+        category_id: c.id || c.category_id,
+        category_name: c.name || c.category_name
+      })));
     } catch (err) {
       console.error('Failed to load menu items', err);
     }
@@ -59,7 +70,8 @@ export default function Orders() {
     try {
       const query = historyStatusFilter ? `?status=${historyStatusFilter}` : '';
       const res = await ordersApi.getOrders(query);
-      setOrders(res.data || []);
+      const raw = res.data || [];
+      setOrders(raw.map(o => ({ ...o, order_id: o.id || o.order_id })));
     } catch (err) {
       console.error('Failed to load order history', err);
     } finally {
@@ -146,7 +158,8 @@ export default function Orders() {
   const handleViewOrder = async (order) => {
     try {
       const res = await ordersApi.getOrderById(order.order_id || order.id);
-      setSelectedOrder(res.data);
+      const raw = res.data;
+      setSelectedOrder(raw ? { ...raw, order_id: raw.id || raw.order_id } : null);
       setIsDetailsOpen(true);
     } catch (err) {
       alert(err.message || 'Failed to fetch order details');
@@ -169,7 +182,8 @@ export default function Orders() {
   };
 
   const handleOpenPayment = (order) => {
-    setSelectedOrder(order);
+    const ord = order ? { ...order, order_id: order.id || order.order_id } : null;
+    setSelectedOrder(ord);
     const remaining = Math.max(0, parseFloat(order.total_amount || 0) - parseFloat(order.total_paid || 0));
     setPaymentForm({
       payment_method: 'CASH',
@@ -183,7 +197,8 @@ export default function Orders() {
     e.preventDefault();
     setSubmittingPayment(true);
     try {
-      await ordersApi.recordPayment(selectedOrder.order_id, {
+      const orderId = selectedOrder.order_id || selectedOrder.id;
+      await ordersApi.recordPayment(orderId, {
         payment_method: paymentForm.payment_method,
         amount_paid: parseFloat(paymentForm.amount_paid),
         transaction_reference: paymentForm.transaction_reference || undefined
@@ -202,8 +217,10 @@ export default function Orders() {
 
   const filteredMenuItems = menuItems.filter(item => {
     const matchCat = selectedCategory === 'ALL' || item.category_id === parseInt(selectedCategory);
-    const matchSearch = item.item_name.toLowerCase().includes(menuSearch.toLowerCase()) ||
-      (item.description && item.description.toLowerCase().includes(menuSearch.toLowerCase()));
+    const name = (item.item_name || item.name || '').toLowerCase();
+    const desc = (item.description || '').toLowerCase();
+    const search = (menuSearch || '').toLowerCase();
+    const matchSearch = name.includes(search) || desc.includes(search);
     return matchCat && matchSearch;
   });
 

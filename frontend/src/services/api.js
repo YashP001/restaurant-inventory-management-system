@@ -47,7 +47,8 @@ async function request(endpoint, options = {}) {
         window.dispatchEvent(new Event('ub_auth_expired'));
       }
 
-      const errorMessage = data?.message || data?.error || `HTTP error ${res.status}`;
+      const rawError = data?.message || (typeof data?.error === 'object' ? data?.error?.message : data?.error);
+      const errorMessage = (typeof rawError === 'string' && rawError) || `HTTP error ${res.status}`;
       const err = new Error(errorMessage);
       err.status = res.status;
       err.data = data;
@@ -71,7 +72,7 @@ export const api = {
 // Convenience API methods mapped directly to Urban Bites endpoints
 export const authApi = {
   login: (identifier, password) => api.post('/auth/login', { identifier, password }),
-  getProfile: () => api.get('/auth/me')
+  getProfile: () => api.get('/auth/profile')
 };
 
 export const dashboardApi = {

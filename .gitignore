@@ -37,6 +37,11 @@ logs/
 *.tmp
 *.temp
 
+# Test outputs
+test-results/
+frontend/test-results/
+frontend/playwright-report/index.html
+
 # IDE & OS files
 .vscode/
 .idea/

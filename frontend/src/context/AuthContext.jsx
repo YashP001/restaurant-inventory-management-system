@@ -20,6 +20,8 @@ export function AuthProvider({ children }) {
     const handleAuthExpired = () => {
       setUser(null);
       setToken(null);
+      localStorage.removeItem('ub_token');
+      localStorage.removeItem('ub_user');
     };
 
     window.addEventListener('ub_auth_expired', handleAuthExpired);
