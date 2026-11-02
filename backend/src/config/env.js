@@ -28,7 +28,10 @@ const envSchema = z.object({
 
   // JWT Authentication
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters long'),
-  JWT_EXPIRES_IN: z.string().default('24h')
+  JWT_EXPIRES_IN: z.string().default('24h'),
+
+  // Demand Forecasting Service URL
+  FORECASTING_SERVICE_URL: z.string().default('http://localhost:8000')
 });
 
 // Parse and validate environment variables
@@ -71,5 +74,7 @@ export const env = {
   JWT: {
     secret: validated.JWT_SECRET,
     expiresIn: validated.JWT_EXPIRES_IN
-  }
+  },
+
+  FORECASTING_SERVICE_URL: validated.FORECASTING_SERVICE_URL
 };

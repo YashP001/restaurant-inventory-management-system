@@ -11,6 +11,8 @@ import inventoryRoutes from './v1/inventory.routes.js';
 import supplierRoutes from './v1/supplier.routes.js';
 import purchaseOrderRoutes from './v1/purchaseOrder.routes.js';
 import orderRoutes from './v1/order.routes.js';
+import forecastingRoutes from './v1/forecasting.routes.js';
+import procurementRoutes from './v1/procurement.routes.js';
 
 const apiRouter = Router();
 
@@ -29,5 +31,7 @@ apiRouter.use('/v1/inventory', inventoryRoutes);
 apiRouter.use('/v1/suppliers', supplierRoutes);
 apiRouter.use('/v1/purchase-orders', purchaseOrderRoutes);
 apiRouter.use('/v1/orders', orderRoutes);
+apiRouter.use('/v1/forecasting', forecastingRoutes);
+apiRouter.use('/v1/procurement', procurementRoutes);
 
 export default apiRouter;
