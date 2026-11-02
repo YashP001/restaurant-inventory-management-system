@@ -71,7 +71,8 @@ const auditLogSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    collection: 'audit_logs'
+    collection: 'audit_logs',
+    bufferCommands: false
   }
 );
 
@@ -93,6 +94,9 @@ auditLogSchema.statics.record = async function ({
   requestId = null,
   metadata = {}
 }) {
+  if (mongoose.connection.readyState !== 1) {
+    return null;
+  }
   try {
     return await this.create({
       userId,

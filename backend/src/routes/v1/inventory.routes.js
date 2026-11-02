@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { InventoryController } from '../../controllers/inventory.controller.js';
+import { ReceiptController } from '../../controllers/receipt.controller.js';
 import { authenticateJWT } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
 import {
   inventoryOverviewQuerySchema,
@@ -11,6 +13,11 @@ import {
   lowStockQuerySchema,
   stockMovementsQuerySchema
 } from '../../validations/inventory.validation.js';
+import {
+  createReceiptSchema,
+  listReceiptsQuerySchema,
+  receiptIdParamSchema
+} from '../../validations/receipt.validation.js';
 
 const router = Router();
 
@@ -30,6 +37,32 @@ router.get('/', validate(inventoryOverviewQuerySchema), InventoryController.getO
  * @access  Private (Authenticated Staff)
  */
 router.get('/summary', InventoryController.getSummary);
+
+/**
+ * @route   POST /api/v1/inventory/receipts
+ * @desc    Receive inventory stock against a purchase order (atomic transaction)
+ * @access  Private (ADMIN, INVENTORY_MANAGER)
+ */
+router.post(
+  '/receipts',
+  requireRole('ADMIN', 'INVENTORY_MANAGER'),
+  validate(createReceiptSchema),
+  ReceiptController.receiveStock
+);
+
+/**
+ * @route   GET /api/v1/inventory/receipts
+ * @desc    List stock receipts grouped by purchase order
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/receipts', validate(listReceiptsQuerySchema), ReceiptController.getReceipts);
+
+/**
+ * @route   GET /api/v1/inventory/receipts/:id
+ * @desc    Get detailed stock receipt breakdown for a purchase order
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/receipts/:id', validate(receiptIdParamSchema), ReceiptController.getReceiptById);
 
 /**
  * @route   GET /api/v1/inventory/expiring

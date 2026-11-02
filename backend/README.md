@@ -893,6 +893,163 @@ $$\text{Urgency Status} = \begin{cases}
 
 > **No Double-Counting:** Aggregations group strictly by ingredient primary key and left-join batch lots, preventing cross-multiplication across child records.
 
+---
+
+## 14. Inventory Batch Receiving & Stock Inward APIs (Phase 2 — Task 5B.1)
+
+Enables atomic physical receiving of raw ingredient batches against authorized purchase orders. Preserves the 21-table MySQL schema by establishing receipts through the relational coordination of `purchase_orders`, `purchase_order_items`, `inventory_batches`, and `stock_movements` without creating unnecessary standalone receipt tables.
+
+### 1. API Endpoints
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/inventory/receipts` | `ADMIN`, `INVENTORY_MANAGER` | Atomically receive ingredient batches against a purchase order |
+| `GET` | `/api/v1/inventory/receipts` | Authenticated Staff | Paginated list of received stock inward orders with supplier details |
+| `GET` | `/api/v1/inventory/receipts/:id` | Authenticated Staff | Detailed receipt breakdown for a purchase order with batches and stock movements |
+
+---
+
+### 2. Concurrency Control & Transaction Isolation
+
+- **Dedicated Connection:** Uses a standalone MySQL connection acquired from the pool (`mysqlPool.getConnection()`).
+- **Pessimistic Locking:** Executes `START TRANSACTION` followed immediately by `SELECT ... FOR UPDATE` on both the target `purchase_orders` record and all linked `purchase_order_items`.
+- **Race Condition Prevention:** Prevents concurrent duplicate receiving requests from double-allocating physical stock or over-receiving beyond outstanding ordered quantities.
+- **Atomic Rollback:** If any single line item validation fails, batch creation errors out, or stock movement insertion fails, the entire transaction issues `ROLLBACK` and releases the connection back to the pool, leaving database state completely uncorrupted.
+
+---
+
+### 3. Business Invariants & Validation Pipeline
+
+1. **Supplier & PO Validation:** Verifies existence of both entities and guarantees `purchase_orders.supplier_id === supplier_id` (`SUPPLIER_MISMATCH`).
+2. **Receivable Status Enforcement:** Stock can only be received against `SUBMITTED` or `PARTIALLY_RECEIVED` purchase orders (`PO_NOT_RECEIVABLE` for `DRAFT`/`CANCELLED`; `PO_ALREADY_RECEIVED` for `RECEIVED`).
+3. **Line Item Association:** Every received ingredient must exist as an ordered line item on the locked purchase order (`INVALID_PO_ITEM`).
+4. **Over-Receiving Prevention:** For each line item, received quantity is strictly bounded:
+   $$\text{Quantity Received} \le \text{Quantity Ordered} - \text{Quantity Already Received}$$
+   Excess deliveries trigger HTTP 400 (`OVER_RECEIVING_NOT_ALLOWED`).
+5. **Batch Number Uniqueness:** Checks `uk_ingredient_batch` `(ingredient_id, batch_number)`. Duplicate batch identifiers trigger HTTP 409 (`DUPLICATE_BATCH_NUMBER`).
+6. **Date Logic:** Enforces `expiry_date >= received_date` (`INVALID_EXPIRY_DATE`).
+7. **Positivity:** Strictly rejects zero or negative received quantities (`quantity_received > 0`) and negative unit costs (`unit_cost >= 0`).
+
+---
+
+### 4. Relational Data Flow & Ledger Synchronization
+
+When a receipt succeeds:
+1. **Inventory Batch Created (`inventory_batches`):**
+   - `quantity_received` and `quantity_remaining` set to received quantity.
+   - `cost_per_unit` recorded from request or inherited from PO line item.
+   - Initial status set to `ACTIVE`.
+2. **Stock Movement Ledger Record (`stock_movements`):**
+   - `movement_type` set to `'PURCHASE_RECEIPT'`.
+   - `reference_id` records `purchase_orders.po_number`.
+   - `balance_after` initialized to received batch quantity.
+3. **Purchase Order Line Item Updated (`purchase_order_items`):**
+   - `quantity_received = quantity_received + ?`
+4. **Purchase Order Status Transition (`purchase_orders`):**
+   - If all line items are fully received ($\sum \text{quantity\_received} \ge \sum \text{quantity\_ordered}$), status advances to `RECEIVED`, populating `actual_delivery_date`.
+   - If partial deliveries exist, status updates to `PARTIALLY_RECEIVED`.
+5. **MongoDB Atlas Audit Logging:** Asynchronously writes `STOCK_BATCH_RECEIVED` event with sanitization stripping sensitive credentials.
+
+---
+
+### 5. Request & Response Examples
+
+#### Stock Batch Receiving (`POST /api/v1/inventory/receipts`):
+```json
+// Request Body
+{
+  "purchase_order_id": 18,
+  "supplier_id": 4,
+  "received_date": "2026-11-02",
+  "notes": "Delivered in good condition via cold chain",
+  "items": [
+    {
+      "ingredient_id": 1,
+      "batch_number": "BATCH-FLOUR-20261102-01",
+      "quantity_received": 50.0,
+      "unit_cost": 42.0,
+      "expiry_date": "2027-02-15"
+    }
+  ]
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Stock received successfully",
+  "data": {
+    "purchase_order": {
+      "id": 18,
+      "po_number": "PO-2026-018",
+      "status": "RECEIVED",
+      "actual_delivery_date": "2026-11-02T00:00:00.000Z",
+      "total_items": 1,
+      "total_quantity_ordered": 50.0,
+      "total_quantity_received": 50.0
+    },
+    "received_items": [
+      {
+        "purchase_order_item_id": 24,
+        "ingredient_id": 1,
+        "batch_id": 49,
+        "batch_number": "BATCH-FLOUR-20261102-01",
+        "quantity_received": 50.0,
+        "unit_cost": 42.0,
+        "expiry_date": "2027-02-15",
+        "stock_movement_id": 55
+      }
+    ]
+  },
+  "meta": null
+}
+```
+
+#### List Receipts (`GET /api/v1/inventory/receipts`):
+```json
+// 200 OK Response
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Receipts retrieved successfully",
+  "data": [
+    {
+      "purchase_order_id": 18,
+      "po_number": "PO-2026-018",
+      "po_status": "RECEIVED",
+      "supplier": {
+        "id": 4,
+        "name": "Golden Grain Flour Mills",
+        "contact_person": "Sunita Verma"
+      },
+      "total_items_count": 1,
+      "total_quantity_ordered": 50.0,
+      "total_quantity_received": 50.0,
+      "first_received_date": "2026-11-02T00:00:00.000Z",
+      "last_received_date": "2026-11-02T00:00:00.000Z",
+      "batches_received_count": 1
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+#### Error Handling Codes:
+- `PURCHASE_ORDER_NOT_FOUND` (404): Target purchase order does not exist.
+- `SUPPLIER_MISMATCH` (400): Purchase order belongs to a different supplier.
+- `PO_NOT_RECEIVABLE` (400): PO status is `DRAFT` or `CANCELLED`.
+- `PO_ALREADY_RECEIVED` (400): PO status is already `RECEIVED`.
+- `INVALID_PO_ITEM` (400): Received ingredient is not part of this purchase order.
+- `OVER_RECEIVING_NOT_ALLOWED` (400): Quantity received exceeds remaining outstanding ordered quantity.
+- `DUPLICATE_BATCH_NUMBER` (409): Batch number already exists for this ingredient.
+- `INVALID_EXPIRY_DATE` (400): Expiry date is earlier than received date.
+- `FORBIDDEN_ROLE` (403): Staff role lacks stock receiving privileges.
+
 
 
 
