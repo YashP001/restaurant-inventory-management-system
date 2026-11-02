@@ -30,6 +30,7 @@ export default function PurchaseOrders() {
   // Data for receiving modal
   const [receiveForm, setReceiveForm] = useState({
     purchase_order_id: '',
+    supplier_id: '',
     invoice_number: '',
     received_date: new Date().toISOString().split('T')[0],
     notes: '',
@@ -135,6 +136,7 @@ export default function PurchaseOrders() {
 
       setReceiveForm({
         purchase_order_id: poData.purchase_order_id,
+        supplier_id: poData.supplier_id,
         invoice_number: `INV-${Date.now().toString().slice(-6)}`,
         received_date: new Date().toISOString().split('T')[0],
         notes: '',
@@ -159,16 +161,26 @@ export default function PurchaseOrders() {
         return;
       }
 
+      // Pre-validation: ensure expiry dates are on or after receipt date
+      for (const it of validItems) {
+        if (it.expiry_date < receiveForm.received_date) {
+          alert(`Expiry date (${it.expiry_date}) for ${it.ingredient_name} cannot be earlier than receipt date (${receiveForm.received_date})`);
+          setReceiveLoading(false);
+          return;
+        }
+      }
+
       const payload = {
-        purchase_order_id: receiveForm.purchase_order_id,
-        invoice_number: receiveForm.invoice_number,
+        purchase_order_id: Number(receiveForm.purchase_order_id),
+        supplier_id: Number(receiveForm.supplier_id),
         received_date: receiveForm.received_date,
         notes: receiveForm.notes || undefined,
         items: validItems.map(it => ({
-          purchase_order_item_id: it.purchase_order_item_id,
+          purchase_order_item_id: it.purchase_order_item_id ? Number(it.purchase_order_item_id) : undefined,
+          ingredient_id: Number(it.ingredient_id),
           quantity_received: parseFloat(it.quantity_received),
-          unit_cost: parseFloat(it.unit_cost),
-          batch_number: it.batch_number,
+          unit_cost: it.unit_cost !== undefined && it.unit_cost !== '' ? parseFloat(it.unit_cost) : undefined,
+          batch_number: it.batch_number.trim(),
           expiry_date: it.expiry_date
         }))
       };
@@ -514,6 +526,7 @@ export default function PurchaseOrders() {
               <input
                 type="date"
                 required
+                min={new Date().toISOString().split('T')[0]}
                 value={createForm.expected_delivery_date}
                 onChange={(e) => setCreateForm({ ...createForm, expected_delivery_date: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"

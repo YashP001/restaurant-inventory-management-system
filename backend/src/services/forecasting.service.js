@@ -44,7 +44,7 @@ export const ForecastingService = {
           sales_history: salesHistory,
           forecast_horizon_days: horizonDays
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(10000)
       });
 
       if (!response.ok) {
@@ -56,7 +56,7 @@ export const ForecastingService = {
     } catch (err) {
       const isTimeout = err.name === 'TimeoutError' || err.message.includes('timeout');
       const detail = isTimeout
-        ? `Forecasting service request timed out after 30s (${url})`
+        ? `Forecasting service request timed out after 10s (${url})`
         : `Forecasting service unavailable at ${url}: ${err.message}`;
       
       throw ApiError.serviceUnavailable(detail, 'FORECAST_SERVICE_UNAVAILABLE');

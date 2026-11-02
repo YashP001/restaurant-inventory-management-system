@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { inventoryApi, catalogApi, supplierApi } from '../services/api';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export function Inventory() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('stock'); // 'stock' | 'batches' | 'expiring' | 'movements'
   const [stockList, setStockList] = useState([]);
   const [batchesList, setBatchesList] = useState([]);
@@ -34,17 +36,6 @@ export function Inventory() {
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [modalError, setModalError] = useState('');
-
-  // Receive Stock Form state
-  const [receiveForm, setReceiveForm] = useState({
-    supplier_id: '',
-    ingredient_id: '',
-    batch_number: '',
-    quantity_received: '',
-    unit_cost: '',
-    expiry_date: '',
-    received_date: new Date().toISOString().split('T')[0]
-  });
 
   // Adjust Stock Form state
   const [adjustForm, setAdjustForm] = useState({
@@ -100,56 +91,41 @@ export function Inventory() {
     loadData();
   }, []);
 
-  const handleReceiveStock = async (e) => {
-    e.preventDefault();
-    try {
-      setActionLoading(true);
-      setModalError('');
-
-      await inventoryApi.receiveStock({
-        supplier_id: Number(receiveForm.supplier_id),
-        items: [
-          {
-            ingredient_id: Number(receiveForm.ingredient_id),
-            batch_number: receiveForm.batch_number.trim(),
-            quantity_received: Number(receiveForm.quantity_received),
-            unit_cost: Number(receiveForm.unit_cost),
-            expiry_date: receiveForm.expiry_date,
-            received_date: receiveForm.received_date
-          }
-        ]
-      });
-
-      setShowReceiveModal(false);
-      setReceiveForm({
-        supplier_id: '',
-        ingredient_id: '',
-        batch_number: '',
-        quantity_received: '',
-        unit_cost: '',
-        expiry_date: '',
-        received_date: new Date().toISOString().split('T')[0]
-      });
-      loadData();
-    } catch (err) {
-      setModalError(err.message || 'Failed to record stock inward');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const handleAdjustStock = async (e) => {
     e.preventDefault();
     try {
       setActionLoading(true);
       setModalError('');
 
+      // Resolve target batch to ensure ingredient_id is accurately provided
+      const targetBatch = batchesList.find(b => String(b.id) === String(adjustForm.batch_id));
+      if (!targetBatch) {
+        setModalError('Please select a valid active batch to adjust');
+        setActionLoading(false);
+        return;
+      }
+
+      const adjustQty = Number(adjustForm.quantity);
+      if (isNaN(adjustQty) || adjustQty <= 0) {
+        setModalError('Adjustment quantity must be strictly greater than zero');
+        setActionLoading(false);
+        return;
+      }
+
+      // Check sufficiency for stock decreases
+      if (adjustForm.adjustment_type === 'DECREASE' && adjustQty > Number(targetBatch.quantity_remaining)) {
+        setModalError(`Decrease quantity (${adjustQty}) exceeds current remaining batch balance (${targetBatch.quantity_remaining})`);
+        setActionLoading(false);
+        return;
+      }
+
       await inventoryApi.adjustStock({
-        batch_id: Number(adjustForm.batch_id),
+        ingredient_id: Number(targetBatch.ingredient_id),
+        batch_id: Number(targetBatch.id),
         adjustment_type: adjustForm.adjustment_type,
-        quantity: Number(adjustForm.quantity),
+        quantity: adjustQty,
         reason: adjustForm.reason,
-        notes: adjustForm.notes
+        notes: adjustForm.notes ? adjustForm.notes.trim() : undefined
       });
 
       setShowAdjustModal(false);
@@ -463,130 +439,55 @@ export function Inventory() {
         </div>
       )}
 
-      {/* MODAL: RECEIVE INWARD STOCK */}
+      {/* MODAL: STOCK RECEIVING PROTOCOL GUIDANCE */}
       <Modal
         isOpen={showReceiveModal}
         onClose={() => setShowReceiveModal(false)}
-        title="Stock Inward & Batch Receiving"
+        title="Stock Inward & Batch Receiving Protocol"
       >
-        {modalError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
-            {modalError}
-          </div>
-        )}
-
-        <form onSubmit={handleReceiveStock} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Supplier</label>
-              <select
-                value={receiveForm.supplier_id}
-                onChange={(e) => setReceiveForm({ ...receiveForm, supplier_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              >
-                <option value="">Select Supplier</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Ingredient</label>
-              <select
-                value={receiveForm.ingredient_id}
-                onChange={(e) => setReceiveForm({ ...receiveForm, ingredient_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              >
-                <option value="">Select Ingredient</option>
-                {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit_abbreviation})</option>)}
-              </select>
-            </div>
+        <div className="space-y-4 text-xs">
+          <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 space-y-2">
+            <h4 className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
+              <span>📋</span> Purchase Order Inward Requirement
+            </h4>
+            <p className="leading-relaxed">
+              In Urban Bites, all physical raw ingredient receiving must be booked against an approved <strong>Purchase Order (PO)</strong>. This guarantees complete supplier chain-of-custody, vendor contract unit price verification, and automated FEFO batch traceability.
+            </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Batch Number</label>
-              <input
-                type="text"
-                placeholder="e.g. BATCH-2026-N1"
-                value={receiveForm.batch_number}
-                onChange={(e) => setReceiveForm({ ...receiveForm, batch_number: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Quantity Received</label>
-              <input
-                type="number"
-                step="0.001"
-                min="0.001"
-                placeholder="0.000"
-                value={receiveForm.quantity_received}
-                onChange={(e) => setReceiveForm({ ...receiveForm, quantity_received: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              />
-            </div>
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-700 space-y-1.5">
+            <p className="font-semibold text-slate-900">How to receive inward stock:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-600">
+              <li>Navigate to <strong>Purchase Orders</strong>.</li>
+              <li>Locate the submitted order from your vendor.</li>
+              <li>Click <strong>Receive Stock</strong> to inspect line items, specify vendor invoice #, and record inward batch numbers &amp; expiry dates.</li>
+            </ol>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Unit Cost (₹)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={receiveForm.unit_cost}
-                onChange={(e) => setReceiveForm({ ...receiveForm, unit_cost: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Received Date</label>
-              <input
-                type="date"
-                value={receiveForm.received_date}
-                onChange={(e) => setReceiveForm({ ...receiveForm, received_date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 uppercase tracking-wider mb-1">Expiry Date</label>
-              <input
-                type="date"
-                value={receiveForm.expiry_date}
-                onChange={(e) => setReceiveForm({ ...receiveForm, expiry_date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                required
-              />
-            </div>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-2xs">
+            <strong>Need to correct physical count discrepancy?</strong> Use the <strong>Adjust Stock</strong> button on this page to reconcile counts without a purchase order.
           </div>
 
-          <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
+          <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
             <button
               type="button"
               onClick={() => setShowReceiveModal(false)}
               className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50"
             >
-              Cancel
+              Close
             </button>
             <button
-              type="submit"
-              disabled={actionLoading}
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold shadow-xs"
+              type="button"
+              onClick={() => {
+                setShowReceiveModal(false);
+                navigate('/purchase-orders');
+              }}
+              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold shadow-xs transition"
             >
-              {actionLoading ? 'Recording...' : 'Record Inward Batch'}
+              Go to Purchase Orders →
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
 
       {/* MODAL: MANUAL STOCK ADJUSTMENT */}

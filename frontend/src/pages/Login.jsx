@@ -107,49 +107,51 @@ export function Login() {
             </button>
           </form>
 
-          {/* Quick Demo Credentials */}
-          <div className="mt-8 pt-6 border-t border-slate-100">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center mb-3">
-              Quick Role Test Logins
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-left">
-              <button
-                type="button"
-                onClick={() => fillQuickCredentials('rohit_admin', 'UrbanBites@2026')}
-                className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
-              >
-                <p className="font-bold text-slate-800">Rohit Sharma</p>
-                <p className="text-[10px] text-primary-600 font-semibold">ADMIN</p>
-              </button>
+          {/* Quick Demo Credentials (Development Mode Only) */}
+          {import.meta.env.DEV && (
+            <div className="mt-8 pt-6 border-t border-slate-100">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center mb-3">
+                Quick Role Test Logins (Dev Mode)
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => fillQuickCredentials('rohit_admin', 'UrbanBites@2026')}
+                  className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
+                >
+                  <p className="font-bold text-slate-800">Rohit Sharma</p>
+                  <p className="text-[10px] text-primary-600 font-semibold">ADMIN</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => fillQuickCredentials('priya_inventory', 'UrbanBites@2026')}
-                className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
-              >
-                <p className="font-bold text-slate-800">Priya Patel</p>
-                <p className="text-[10px] text-emerald-600 font-semibold">INVENTORY MGR</p>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => fillQuickCredentials('priya_inventory', 'UrbanBites@2026')}
+                  className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
+                >
+                  <p className="font-bold text-slate-800">Priya Patel</p>
+                  <p className="text-[10px] text-emerald-600 font-semibold">INVENTORY MGR</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => fillQuickCredentials('vikram_headchef', 'UrbanBites@2026')}
-                className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
-              >
-                <p className="font-bold text-slate-800">Vikram Malhotra</p>
-                <p className="text-[10px] text-amber-600 font-semibold">HEAD CHEF</p>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => fillQuickCredentials('vikram_headchef', 'UrbanBites@2026')}
+                  className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
+                >
+                  <p className="font-bold text-slate-800">Vikram Malhotra</p>
+                  <p className="text-[10px] text-amber-600 font-semibold">HEAD CHEF</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => fillQuickCredentials('arjun_cashier', 'UrbanBites@2026')}
-                className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
-              >
-                <p className="font-bold text-slate-800">Arjun Verma</p>
-                <p className="text-[10px] text-blue-600 font-semibold">CASHIER / POS</p>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => fillQuickCredentials('arjun_cashier', 'UrbanBites@2026')}
+                  className="p-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/50 transition text-xs"
+                >
+                  <p className="font-bold text-slate-800">Arjun Verma</p>
+                  <p className="text-[10px] text-blue-600 font-semibold">CASHIER / POS</p>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
