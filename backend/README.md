@@ -1050,6 +1050,159 @@ When a receipt succeeds:
 - `INVALID_EXPIRY_DATE` (400): Expiry date is earlier than received date.
 - `FORBIDDEN_ROLE` (403): Staff role lacks stock receiving privileges.
 
+---
+
+## 15. Manual Stock Adjustments & Food Waste Recording APIs (Phase 2 — Task 5B.2)
+
+Provides audited physical stock increase and decrease workflows for stocktaking discrepancy correction, alongside a food waste recording engine that interfaces directly with database triggers for automatic financial loss computation.
+
+### 1. API Endpoints
+
+#### Manual Stock Adjustments:
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/inventory/adjustments` | `ADMIN`, `INVENTORY_MANAGER` | Atomically adjust stock upward or downward on a specific physical batch |
+| `GET` | `/api/v1/inventory/adjustments` | Authenticated Staff | Paginated listing of manual stock adjustments with batch and user details |
+| `GET` | `/api/v1/inventory/adjustments/:id` | Authenticated Staff | Detailed adjustment record by stock movement ID |
+
+#### Food Waste Recording:
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/inventory/waste` | `ADMIN`, `INVENTORY_MANAGER`, `CHEF` | Atomically log food waste event, deduct batch stock, and compute financial loss |
+| `GET` | `/api/v1/inventory/waste` | Authenticated Staff | Paginated listing of food waste events with filters for reason and date |
+| `GET` | `/api/v1/inventory/waste/:id` | Authenticated Staff | Detailed food waste record with batch and cost loss metrics |
+
+---
+
+### 2. Transaction & Locking Methodology
+
+Both adjustment and waste endpoints adhere to strict ACID transaction protocols:
+1. **Dedicated MySQL Connection:** Acquired from the pool via `getMySQLPool().getConnection()`.
+2. **Pessimistic Row Locking:** Begins with `START TRANSACTION` followed by `SELECT ... FROM inventory_batches WHERE id = ? FOR UPDATE`.
+3. **Concurrency Safety:** Prevents race conditions during simultaneous physical count adjustments or kitchen waste loggings against the same batch lot.
+4. **All-or-Nothing Atomicity:** If any validation fails (e.g. quantity exceeds remaining stock, ingredient-batch mismatch, batch expired), the transaction issues `ROLLBACK` and releases the connection, ensuring zero partial updates.
+
+---
+
+### 3. Business Invariants & Rejection Rules
+
+#### Stock Adjustments:
+- **RBAC Guard:** Restricted to `ADMIN` and `INVENTORY_MANAGER`. `CHEF` and `CASHIER` are rejected with `403 Forbidden` (`FORBIDDEN_ROLE`).
+- **Batch Verification:** The batch must belong to the supplied ingredient (`INGREDIENT_BATCH_MISMATCH` if mismatched; `BATCH_NOT_FOUND` if nonexistent).
+- **Expiration Guard:** Non-expired batches only (`BATCH_EXPIRED` if expired; `BATCH_DISCARDED` if discarded). Expired items must be disposed through waste recording.
+- **Stock Decreases:** Cannot cause negative batch quantities (`INSUFFICIENT_BATCH_STOCK`).
+- **Stock Increases:** Automatically balances `quantity_received = GREATEST(quantity_received, new_remaining)` to maintain the schema check constraint `chk_batch_remaining_le_recv`.
+- **Ledger Invariant:** Every adjustment creates an immutable `stock_movements` record of type `'AUDIT_ADJUSTMENT'` recording positive quantity, balance after, reference ID, and reason.
+
+#### Waste Recording:
+- **RBAC Guard:** `ADMIN`, `INVENTORY_MANAGER`, and `CHEF` are permitted. `CASHIER` is rejected with `403 Forbidden`.
+- **Stock Guard:** Waste quantity cannot exceed the batch's current `quantity_remaining` (`INSUFFICIENT_STOCK_FOR_WASTE`).
+- **Trigger-Based Costing:** Inserts with `financial_loss = 0.00`. The database trigger `trg_calculate_waste_cost` intercepts the insert and calculates the exact financial loss:
+  $$\text{financial\_loss} = \text{ROUND}\left(\text{quantity\_wasted} \times \frac{\text{UOM}_{\text{conversion\_factor}}}{\text{Base\_UOM}_{\text{conversion\_factor}}} \times \text{batch\_unit\_cost}, 2\right)$$
+- **Ledger Invariant:** Creates a `stock_movements` record of type `'WASTE_DISPOSAL'` linked to the waste record ID.
+- **Enumerated Root Causes:** Strictly constrained to schema enum: `'EXPIRED'`, `'SPOILED'`, `'PREPARATION_SCRAP'`, `'OVERCOOKED'`, `'CUSTOMER_RETURN'`, `'STORAGE_CONTAMINATION'`.
+
+---
+
+### 4. Example Request & Response Payloads
+
+#### Stock Adjustment (`POST /api/v1/inventory/adjustments`):
+```json
+// Request Body
+{
+  "ingredient_id": 1,
+  "batch_id": 1,
+  "adjustment_type": "DECREASE",
+  "quantity": 2.500,
+  "reason": "Physical count variance correction",
+  "notes": "Moisture damage in storage rack 4"
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Stock adjustment completed successfully",
+  "data": {
+    "id": 56,
+    "reference_id": "ADJ-1762068200-5819",
+    "batch_id": 1,
+    "batch_number": "BATCH-FLOUR-001",
+    "ingredient_id": 1,
+    "ingredient_name": "All-Purpose Flour (Maida)",
+    "adjustment_type": "DECREASE",
+    "quantity_adjusted": 2.5,
+    "previous_quantity_remaining": 36.453,
+    "new_quantity_remaining": 33.953,
+    "unit": "kg",
+    "reason": "Physical count variance correction",
+    "notes": "Moisture damage in storage rack 4"
+  },
+  "meta": null
+}
+```
+
+#### Waste Recording (`POST /api/v1/inventory/waste`):
+```json
+// Request Body
+{
+  "ingredient_id": 2,
+  "batch_id": 48,
+  "quantity_wasted": 3.000,
+  "waste_reason": "SPOILED",
+  "notes": "Spotted mold during morning line prep"
+}
+
+// 201 Created Response
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Waste recorded successfully",
+  "data": {
+    "id": 36,
+    "waste_reason": "SPOILED",
+    "quantity_wasted": 3,
+    "financial_loss": 135.0,
+    "notes": "Spotted mold during morning line prep",
+    "logged_at": "2026-11-02T07:15:00.000Z",
+    "ingredient": {
+      "id": 2,
+      "name": "Mozzarella Cheese"
+    },
+    "batch": {
+      "id": 48,
+      "batch_number": "BATCH-TOM-003",
+      "expiry_date": "2026-11-07T00:00:00.000Z",
+      "unit_cost": 45
+    },
+    "unit": {
+      "id": 1,
+      "name": "Kilogram",
+      "abbreviation": "kg"
+    },
+    "logged_by": {
+      "id": 3,
+      "username": "vikram_headchef",
+      "full_name": "Vikram Malhotra"
+    },
+    "stock_movement_id": 57,
+    "remaining_batch_quantity": 12.0
+  },
+  "meta": null
+}
+```
+
+#### Error Handling Codes:
+- `BATCH_NOT_FOUND` (404): Inventory batch does not exist.
+- `INGREDIENT_BATCH_MISMATCH` (400): Batch does not belong to the supplied ingredient.
+- `BATCH_EXPIRED` (400): Batch has expired; must be disposed through waste recording.
+- `BATCH_DISCARDED` (400): Batch has status DISCARDED and cannot be adjusted.
+- `INSUFFICIENT_BATCH_STOCK` (400): Adjustment decrease exceeds available batch stock.
+- `INSUFFICIENT_STOCK_FOR_WASTE` (400): Waste quantity exceeds available batch stock.
+- `ADJUSTMENT_NOT_FOUND` (404): Stock adjustment record does not exist.
+- `WASTE_RECORD_NOT_FOUND` (404): Waste record does not exist.
+- `FORBIDDEN_ROLE` (403): Staff role lacks modification privileges.
+
 
 
 

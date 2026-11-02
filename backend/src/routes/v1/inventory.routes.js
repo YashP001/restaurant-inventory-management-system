@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { InventoryController } from '../../controllers/inventory.controller.js';
 import { ReceiptController } from '../../controllers/receipt.controller.js';
+import { AdjustmentController } from '../../controllers/adjustment.controller.js';
+import { WasteController } from '../../controllers/waste.controller.js';
 import { authenticateJWT } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
@@ -18,6 +20,16 @@ import {
   listReceiptsQuerySchema,
   receiptIdParamSchema
 } from '../../validations/receipt.validation.js';
+import {
+  createAdjustmentSchema,
+  listAdjustmentsQuerySchema,
+  adjustmentIdParamSchema
+} from '../../validations/adjustment.validation.js';
+import {
+  createWasteSchema,
+  listWasteQuerySchema,
+  wasteIdParamSchema
+} from '../../validations/waste.validation.js';
 
 const router = Router();
 
@@ -63,6 +75,58 @@ router.get('/receipts', validate(listReceiptsQuerySchema), ReceiptController.get
  * @access  Private (Authenticated Staff)
  */
 router.get('/receipts/:id', validate(receiptIdParamSchema), ReceiptController.getReceiptById);
+
+/**
+ * @route   POST /api/v1/inventory/adjustments
+ * @desc    Perform manual stock increase or decrease on an inventory batch (atomic transaction)
+ * @access  Private (ADMIN, INVENTORY_MANAGER)
+ */
+router.post(
+  '/adjustments',
+  requireRole('ADMIN', 'INVENTORY_MANAGER'),
+  validate(createAdjustmentSchema),
+  AdjustmentController.adjustStock
+);
+
+/**
+ * @route   GET /api/v1/inventory/adjustments
+ * @desc    List manual stock adjustments audit ledger
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/adjustments', validate(listAdjustmentsQuerySchema), AdjustmentController.getAdjustments);
+
+/**
+ * @route   GET /api/v1/inventory/adjustments/:id
+ * @desc    Get detailed manual stock adjustment by ID
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/adjustments/:id', validate(adjustmentIdParamSchema), AdjustmentController.getAdjustmentById);
+
+/**
+ * @route   POST /api/v1/inventory/waste
+ * @desc    Record food waste and deduct stock from inventory batch (atomic transaction)
+ * @access  Private (ADMIN, INVENTORY_MANAGER, CHEF)
+ */
+router.post(
+  '/waste',
+  requireRole('ADMIN', 'INVENTORY_MANAGER', 'CHEF'),
+  validate(createWasteSchema),
+  WasteController.recordWaste
+);
+
+/**
+ * @route   GET /api/v1/inventory/waste
+ * @desc    List recorded food waste events
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/waste', validate(listWasteQuerySchema), WasteController.getWasteRecords);
+
+/**
+ * @route   GET /api/v1/inventory/waste/:id
+ * @desc    Get detailed waste record by ID
+ * @access  Private (Authenticated Staff)
+ */
+router.get('/waste/:id', validate(wasteIdParamSchema), WasteController.getWasteRecordById);
 
 /**
  * @route   GET /api/v1/inventory/expiring
