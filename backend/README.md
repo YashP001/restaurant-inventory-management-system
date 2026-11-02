@@ -1232,12 +1232,39 @@ Both adjustment and waste endpoints adhere to strict ACID transaction protocols:
 | `POST` | `/api/v1/purchase-orders/:id/submit` | `ADMIN`, `INVENTORY_MANAGER` | Submit DRAFT PO (requires >= 1 item, transitions to `SUBMITTED`) |
 | `POST` | `/api/v1/purchase-orders/:id/cancel` | `ADMIN`, `INVENTORY_MANAGER` | Cancel PO from `DRAFT`, `SUBMITTED`, or `PARTIALLY_RECEIVED` |
 
+---
+
+## 17. Customer Order and Sales Management APIs (Phase 2 — Task 6A)
+
+### 1. Order Management (`/api/v1/orders`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/orders` | Authenticated Staff | Paginated customer orders with status, order_type, table_id, date, and search filters |
+| `GET` | `/api/v1/orders/:id` | Authenticated Staff | Detailed order by ID or order_number with line items, payments, and ingredient consumptions |
+| `POST` | `/api/v1/orders` | `ADMIN`, `CASHIER` | Create customer order (`DINE_IN`, `TAKEAWAY`, `ONLINE`) with auto-generated `UB-ORD-XXXX` |
+| `POST` | `/api/v1/orders/:id/items` | `ADMIN`, `CASHIER` | Add line item to `PENDING` order (selling price snapshotted from menu_items, 5% tax calculated) |
+| `PATCH` | `/api/v1/orders/:id/items/:itemId` | `ADMIN`, `CASHIER` | Update line item quantity on `PENDING` order (recalculates subtotal and taxes) |
+| `DELETE` | `/api/v1/orders/:id/items/:itemId` | `ADMIN`, `CASHIER` | Remove line item from `PENDING` order |
+| `POST` | `/api/v1/orders/:id/confirm` | `ADMIN`, `CHEF` | Confirm order; executes `sp_process_order_fefo` to deduct stock via FEFO and transition to `PREPARING` |
+| `POST` | `/api/v1/orders/:id/complete` | `ADMIN`, `CHEF` | Mark order `COMPLETED` from `PREPARING`, frees dining table to `VACANT` without re-deducting inventory |
+| `POST` | `/api/v1/orders/:id/cancel` | `ADMIN`, `CASHIER` | Cancel order; preserves consumed stock ledger entries if already preparing |
+
+### 2. Payment Management (`/api/v1/orders/:id/payments`)
+
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/orders/:id/payments` | `ADMIN`, `CASHIER` | Record customer payment (`CASH`, `CREDIT_CARD`, `DEBIT_CARD`, `UPI`, `ONLINE`) with overpayment protection |
+| `GET` | `/api/v1/orders/:id/payments` | Authenticated Staff | List all payment attempts and transactions with settlement balance summary |
+
 #### Key Business & Concurrency Rules:
-1. **PO Number Generation:** Auto-generated inside InnoDB transaction under row lock as `PO-YYYY-NNN` (e.g. `PO-2026-019`).
-2. **Transactional Line Totals:** Subtotals (`ROUND(quantity * unit_cost, 2)`) and PO `total_amount` (`SUM(subtotal)`) are updated transactionally.
-3. **Immutability After Submission:** Submitted POs reject line item additions, updates, and deletions.
-4. **Integration with Receipt API:** Submitted POs can be partially or fully received via `POST /api/v1/inventory/receipts`.
-5. **Safe Cancellation Lifecycle:** Fully received POs cannot be cancelled. Partially received POs transition to `CANCELLED` without altering or discarding already-received inventory batches, while blocking any future receipts.
+1. **Order Number Generation:** Auto-generated inside InnoDB transaction under row lock as `UB-ORD-XXXX` (e.g. `UB-ORD-0251`).
+2. **Dining Table Lifecycle:** Dining table status transitions to `OCCUPIED` upon `DINE_IN` order creation and automatically returns to `VACANT` upon order completion or cancellation.
+3. **Price Snapshotting:** Line items freeze `unit_price` from `menu_items.selling_price` at the exact time of order placement, insulating historical receipts from future menu price revisions.
+4. **FEFO Inventory Deduction:** Stock deduction is exclusively delegated to the database stored procedure `sp_process_order_fefo`. Dedicated connection handling guarantees atomic execution and prevents nested transaction conflicts.
+5. **No Double Deduction:** The `complete` endpoint validates `PREPARING` state and updates order status without re-triggering inventory deductions.
+6. **Safe Cancellation Lifecycle:** Cancelling an order in `PENDING` state requires no stock adjustment. Cancelling an order in `PREPARING` state preserves `order_ingredient_consumptions` and `stock_movements` ledger entries without silent unlogged reversals.
+7. **Overpayment & Duplicate Protection:** Transactional row locking (`FOR UPDATE`) on orders and payments prevents race conditions and strictly rejects payments exceeding the outstanding balance (`total_amount - SUM(amount_paid)`).
 
 
 
